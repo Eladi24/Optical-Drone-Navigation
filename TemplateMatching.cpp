@@ -377,7 +377,8 @@ void runDroneSimulation(
     double meters_per_degree_lat, double meters_per_degree_lng,
     double center_lat, double center_lng,
     int center_x, int center_y,
-    double mpp)
+    double mpp,
+    PositionAlgorithm algorithm)
 {
     // Calculate initial heading from start to end
     double delta_lng = end_lng - start_lng;
@@ -418,9 +419,19 @@ void runDroneSimulation(
     std::vector<std::pair<double, double>> algorithm_positions;
     std::vector<double> match_confidences;
     
+    // Create algorithm name for display and telemetry
+    std::string algorithm_name;
+    switch(algorithm) {
+        case PositionAlgorithm::TEMPLATE: algorithm_name = "template"; break;
+        case PositionAlgorithm::ORB: algorithm_name = "orb"; break;
+        case PositionAlgorithm::DNN: algorithm_name = "dnn"; break;
+        case PositionAlgorithm::HYBRID: algorithm_name = "hybrid"; break;
+        case PositionAlgorithm::SMOOTHED: algorithm_name = "smoothed"; break;
+    }
+    
     // Create CSV file for telemetry data
     std::ofstream telemetry_file("drone_telemetry.csv");
-    telemetry_file << "Step,Actual_Lat,Actual_Lng,Estimated_Lat,Estimated_Lng,Match_Confidence,Lat_Error_M,Lng_Error_M,Error_M\n";
+    telemetry_file << "Step,Actual_Lat,Actual_Lng,Estimated_Lat,Estimated_Lng,Match_Confidence,Lat_Error_M,Lng_Error_M,Error_M,Algorithm\n";
     
     // Create a telemetry data visualization matrix
     int telemetry_height = 600;
@@ -443,21 +454,76 @@ void runDroneSimulation(
     // Main simulation loop
     for (int step = 0; step < max_steps; step++)
     {
-        // 1. Update drone's position based on GPS (with simulated drift)
+        // 1. Update drone's position
         drone.step(sim_dt, 0.0);
 
-        // 2. Update drone's current view (image capture)
+        // 2. Update drone's current view
         drone.updateView(center_lat, center_lng, center_x, center_y, mpp);
         cv::Mat drone_view = drone.getCurrentView();
 
-        // 3. Use hybrid image matching to estimate position
+        // 3. Use selected algorithm to estimate position
         std::pair<double, double> last_position = algorithm_positions.empty() ? 
             drone.getPosition() : algorithm_positions.back();
             
-        auto [estimated_position, match_confidence, best_match_idx] =
-            estimatePositionHybrid(drone_view, ref_crop_coords, reference_crops, last_position);
+        std::pair<double, double> estimated_position;
+        double match_confidence;
+        int best_match_idx = -1;
+        
+        // Call appropriate algorithm based on selection
+        switch(algorithm) {
+            case PositionAlgorithm::TEMPLATE: {
+                auto [pos, conf, idx] = estimatePositionFromImage(
+                    drone_view, ref_crop_coords, reference_crops);
+                estimated_position = pos;
+                match_confidence = conf;
+                best_match_idx = idx;
+                break;
+            }
+            case PositionAlgorithm::ORB: {
+                estimated_position = estimatePositionWithFeatures(
+                    drone_view, ref_crop_coords, reference_crops);
+                // Since ORB doesn't return confidence directly, use a fixed value or calculate it
+                match_confidence = 0.7; // Fixed confidence value
+                // Find the index of the position in the reference coordinates
+                for (size_t i = 0; i < ref_crop_coords.size(); i++) {
+                    if (ref_crop_coords[i] == estimated_position) {
+                        best_match_idx = i;
+                        break;
+                    }
+                }
+                break;
+            }
+            case PositionAlgorithm::DNN: {
+                estimated_position = estimatePositionWithDNN(
+                    drone_view, ref_crop_coords, reference_crops);
+                match_confidence = 0.75; // Fixed confidence or calculate it
+                // Find index
+                for (size_t i = 0; i < ref_crop_coords.size(); i++) {
+                    if (ref_crop_coords[i] == estimated_position) {
+                        best_match_idx = i;
+                        break;
+                    }
+                }
+                break;
+            }
+            case PositionAlgorithm::SMOOTHED: {
+                estimated_position = getSmoothedPositionEstimate(
+                    drone_view, ref_crop_coords, reference_crops, last_position);
+                match_confidence = 0.65; // Fixed confidence or calculate it
+                break;
+            }
+            case PositionAlgorithm::HYBRID:
+            default: {
+                auto [pos, conf, idx] = estimatePositionHybrid(
+                    drone_view, ref_crop_coords, reference_crops, last_position);
+                estimated_position = pos;
+                match_confidence = conf;
+                best_match_idx = idx;
+                break;
+            }
+        }
 
-        // Add temporal smoothing to reduce sudden jumps
+        // Add temporal smoothing if desired
         if (!algorithm_positions.empty()) {
             const double smooth_factor = 0.3; // 0-1, higher means more smoothing
             estimated_position.first = estimated_position.first * (1-smooth_factor) + 
@@ -466,11 +532,11 @@ void runDroneSimulation(
                                     algorithm_positions.back().second * smooth_factor;
         }
 
-        // Always store the estimated position regardless of match quality
+        // Store position and confidence
         algorithm_positions.push_back(estimated_position);
         match_confidences.push_back(match_confidence);
 
-        // Write telemetry data to CSV
+        // Write telemetry data to CSV with algorithm info
         double error_lat_m = (drone.getPosition().first - estimated_position.first) * meters_per_degree_lat;
         double error_lng_m = (drone.getPosition().second - estimated_position.second) * meters_per_degree_lng;
         double error_m = std::sqrt(error_lat_m * error_lat_m + error_lng_m * error_lng_m);
@@ -481,9 +547,10 @@ void runDroneSimulation(
              << estimated_position.first << ","
              << estimated_position.second << ","
              << std::setprecision(3) << match_confidence << ","
-             << std::setprecision(1) << error_lat_m << ","  // Add lat error
-             << error_lng_m << ","                         // Add lng error
-             << error_m << "\n";
+             << std::setprecision(1) << error_lat_m << ","
+             << error_lng_m << ","
+             << error_m << ","
+             << algorithm_name << "\n";
 
         // Create visualization for this step
         cv::Mat step_vis = clean_map.clone();
@@ -767,7 +834,8 @@ void runDroneSimulationWithWaypoints(
     double meters_per_degree_lat, double meters_per_degree_lng,
     double center_lat, double center_lng,
     int center_x, int center_y,
-    double mpp)
+    double mpp,
+    PositionAlgorithm algorithm)
 {
     if (waypoints.size() < 2) {
         std::cout << "Error: At least 2 waypoints required for navigation" << std::endl;
@@ -818,9 +886,20 @@ void runDroneSimulationWithWaypoints(
     std::vector<std::pair<double, double>> algorithm_positions;
     std::vector<double> match_confidences;
     
-    // Create CSV file for telemetry data
-    std::ofstream telemetry_file("drone_telemetry_zigzag.csv");
-    telemetry_file << "Step,Actual_Lat,Actual_Lng,Estimated_Lat,Estimated_Lng,Match_Confidence,Lat_Error_M,Lng_Error_M,Error_M,Current_Waypoint\n";
+    // Create algorithm name for display and telemetry
+    std::string algorithm_name;
+    switch(algorithm) {
+        case PositionAlgorithm::TEMPLATE: algorithm_name = "template"; break;
+        case PositionAlgorithm::ORB: algorithm_name = "orb"; break;
+        case PositionAlgorithm::DNN: algorithm_name = "dnn"; break;
+        case PositionAlgorithm::HYBRID: algorithm_name = "hybrid"; break;
+        case PositionAlgorithm::SMOOTHED: algorithm_name = "smoothed"; break;
+    }
+    
+    // Create CSV file for telemetry data with algorithm name
+    std::string telemetry_filename = "drone_telemetry_" + algorithm_name + "_waypoints.csv";
+    std::ofstream telemetry_file(telemetry_filename);
+    telemetry_file << "Step,Actual_Lat,Actual_Lng,Estimated_Lat,Estimated_Lng,Match_Confidence,Lat_Error_M,Lng_Error_M,Error_M,Current_Waypoint,Algorithm\n";
     
     // Create a telemetry data visualization matrix
     int telemetry_height = 600;
@@ -893,12 +972,65 @@ void runDroneSimulationWithWaypoints(
         drone.updateView(center_lat, center_lng, center_x, center_y, mpp);
         cv::Mat drone_view = drone.getCurrentView();
 
-        // Use hybrid image matching to estimate position
+        // Get the last known position for algorithms that need it
         std::pair<double, double> last_position = algorithm_positions.empty() ? 
             drone.getPosition() : algorithm_positions.back();
-            
-        auto [estimated_position, match_confidence, best_match_idx] =
-            estimatePositionHybrid(drone_view, ref_crop_coords, reference_crops, last_position);
+        
+        // Apply selected algorithm to estimate position
+        std::pair<double, double> estimated_position;
+        double match_confidence;
+        int best_match_idx = -1;
+        
+        // Call appropriate algorithm based on selection
+        switch(algorithm) {
+            case PositionAlgorithm::TEMPLATE: {
+                auto [pos, conf, idx] = estimatePositionFromImage(
+                    drone_view, ref_crop_coords, reference_crops);
+                estimated_position = pos;
+                match_confidence = conf;
+                best_match_idx = idx;
+                break;
+            }
+            case PositionAlgorithm::ORB: {
+                estimated_position = estimatePositionWithFeatures(
+                    drone_view, ref_crop_coords, reference_crops);
+                match_confidence = 0.7; // Fixed confidence value
+                for (size_t i = 0; i < ref_crop_coords.size(); i++) {
+                    if (ref_crop_coords[i] == estimated_position) {
+                        best_match_idx = i;
+                        break;
+                    }
+                }
+                break;
+            }
+            case PositionAlgorithm::DNN: {
+                estimated_position = estimatePositionWithDNN(
+                    drone_view, ref_crop_coords, reference_crops);
+                match_confidence = 0.75; // Fixed confidence value
+                for (size_t i = 0; i < ref_crop_coords.size(); i++) {
+                    if (ref_crop_coords[i] == estimated_position) {
+                        best_match_idx = i;
+                        break;
+                    }
+                }
+                break;
+            }
+            case PositionAlgorithm::SMOOTHED: {
+                estimated_position = getSmoothedPositionEstimate(
+                    drone_view, ref_crop_coords, reference_crops, last_position);
+                match_confidence = 0.65; // Fixed confidence value
+                break;
+            }
+            case PositionAlgorithm::HYBRID:
+            default: {
+                auto [pos, conf, idx] = estimatePositionHybrid(
+                    drone_view, ref_crop_coords, reference_crops, last_position);
+                estimated_position = pos;
+                match_confidence = conf;
+                best_match_idx = idx;
+                break;
+            }
+        }
 
         // Add temporal smoothing to reduce sudden jumps
         if (!algorithm_positions.empty()) {
@@ -924,10 +1056,11 @@ void runDroneSimulationWithWaypoints(
              << estimated_position.first << ","
              << estimated_position.second << ","
              << std::setprecision(3) << match_confidence << ","
-             << std::setprecision(1) << error_lat_m << ","
-             << error_lng_m << ","
+             << std::setprecision(1) << error_lat_m << ","  // Add lat error
+             << error_lng_m << ","                         // Add lng error
              << error_m << ","
-             << current_waypoint << "\n";
+             << current_waypoint << ","
+             << algorithm_name << "\n";
 
         // Create visualization for this step
         cv::Mat step_vis = clean_map.clone();
@@ -1021,7 +1154,7 @@ void runDroneSimulationWithWaypoints(
         int legend_x = clean_map.cols - 270;
         int legend_y = 30;
         int legend_width = 250;
-        int legend_height = 100; // Increased height for more items
+        int legend_height = 130; // Increased height for more items including algorithm info
         int line_height = 25;
         
         // Create semi-transparent background for legend
@@ -1031,6 +1164,10 @@ void runDroneSimulationWithWaypoints(
         cv::addWeighted(overlay, 0.7, step_vis, 0.3, 0, step_vis);
         
         // Draw legend text
+        cv::putText(step_vis, "Algorithm: " + algorithm_name, cv::Point(legend_x, legend_y), 
+                   cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 200), 2);
+        legend_y += line_height;
+        
         cv::putText(step_vis, "Orange: Actual GPS Path", cv::Point(legend_x, legend_y), 
                    cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 165, 255), 2);
         legend_y += line_height;
@@ -1045,8 +1182,12 @@ void runDroneSimulationWithWaypoints(
         // Create telemetry table visualization
         telemetry_vis = cv::Scalar(240, 240, 240); // Clear previous frame
 
+        // Draw algorithm info at the top
+        cv::putText(telemetry_vis, "Algorithm: " + algorithm_name, 
+                   cv::Point(20, 25), cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(0, 0, 200), 2);
+
         // Draw table headers
-        int header_y = 40;
+        int header_y = 60;
         cv::putText(telemetry_vis, "Step", cv::Point(30, header_y), 
                    cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 1);
         cv::putText(telemetry_vis, "Actual Position", cv::Point(80, header_y), 
@@ -1210,7 +1351,7 @@ void runDroneSimulationWithWaypoints(
     }
     
     telemetry_file.close();
-    std::cout << "Telemetry data saved to drone_telemetry.csv" << std::endl;
+    std::cout << "Telemetry data saved to " << telemetry_filename << std::endl;
     std::cout << "Simulation completed. Press any key to continue..." << std::endl;
     cv::waitKey(0);
     cv::destroyAllWindows();
@@ -1377,6 +1518,17 @@ std::tuple<std::pair<double, double>, double, int> estimatePositionHybrid(
     std::pair<double, double> feature_position =
         estimatePositionWithFeatures(drone_view, ref_crop_coords, reference_crops);
     
+    // Get position estimate using DNN (if available)
+    std::pair<double, double> dnn_position;
+    bool dnn_available = false;
+    try {
+        dnn_position = estimatePositionWithDNN(drone_view, ref_crop_coords, reference_crops);
+        dnn_available = true;
+    } catch (const cv::Exception &e) {
+        // DNN not available or error occurred, we'll continue without it
+        dnn_available = false;
+    }
+    
     // Find index and confidence for feature match
     int feature_idx = -1;
     for (size_t i = 0; i < ref_crop_coords.size(); i++) {
@@ -1386,19 +1538,128 @@ std::tuple<std::pair<double, double>, double, int> estimatePositionHybrid(
         }
     }
     
-    // Decide which method to use based on template matching confidence
+    // Find index for DNN match
+    int dnn_idx = -1;
+    if (dnn_available) {
+        for (size_t i = 0; i < ref_crop_coords.size(); i++) {
+            if (ref_crop_coords[i] == dnn_position) {
+                dnn_idx = i;
+                break;
+            }
+        }
+    }
+    
+    // Decision logic - prioritize methods based on confidence and availability
     if (template_confidence > 0.8) {
         // If template matching is very confident, use it
         return {template_position, template_confidence, template_idx};
     }
+    else if (template_confidence > 0.6 && feature_idx == template_idx && feature_idx != -1) {
+        // If template and feature agree with reasonable confidence, use template
+        // with slightly boosted confidence
+        return {template_position, template_confidence + 0.1, template_idx};
+    }
+    else if (dnn_available && dnn_idx != -1 && 
+            (dnn_idx == template_idx || dnn_idx == feature_idx)) {
+        // If DNN agrees with either template or feature, use that one with high confidence
+        if (dnn_idx == template_idx) {
+            return {template_position, std::min(template_confidence + 0.2, 0.9), template_idx};
+        } else {
+            return {feature_position, 0.8, feature_idx};
+        }
+    }
     else if (feature_idx != -1) {
-        // Otherwise use feature matching result
-        // Assign a confidence value (you may want to adjust this)
+        // Otherwise use feature matching result if available
         double feature_confidence = 0.7;
         return {feature_position, feature_confidence, feature_idx};
     }
+    else if (template_confidence > 0.4) {
+        // Lower confidence template match as fallback
+        return {template_position, template_confidence, template_idx};
+    }
+    else if (dnn_available && dnn_idx != -1) {
+        // Use DNN as last resort if available
+        return {dnn_position, 0.65, dnn_idx};
+    }
     else {
-        // If both methods fail, use last known position with low confidence
+        // If all methods fail, use last known position with low confidence
         return {last_position, 0.3, -1};
     }
+}
+
+std::pair<double, double> estimatePositionWithDNN(
+    const cv::Mat &drone_view,
+    const std::vector<std::pair<double, double>> &ref_crop_coords,
+    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash> &reference_crops)
+{
+    // Path to pre-trained model (pick a suitable model for your use case)
+    static cv::dnn::Net net;
+    
+    // Load model once (using static to avoid reloading)
+    if (net.empty()) {
+        try {
+            // Try to load MobileNet (smaller and faster than ResNet)
+            net = cv::dnn::readNetFromCaffe(
+                "models/MobileNetSSD_deploy.prototxt", 
+                "models/MobileNetSSD_deploy.caffemodel");
+                
+            // Alternative models could be:
+            // net = cv::dnn::readNetFromTorch("models/resnet18.t7");
+            // net = cv::dnn::readNet("models/mobilenet_v2.onnx");
+            
+            // Set preferred backend and target
+            net.setPreferableBackend(cv::dnn::DNN_BACKEND_OPENCV);
+            net.setPreferableTarget(cv::dnn::DNN_TARGET_CPU);
+        }
+        catch (const cv::Exception& e) {
+            std::cerr << "Error loading DNN model: " << e.what() << std::endl;
+            // Return default position if model can't be loaded
+            return {0.0, 0.0};
+        }
+    }
+    
+    // Extract features from drone view
+    cv::Mat blob = cv::dnn::blobFromImage(drone_view, 1.0/255.0, 
+                                        cv::Size(224, 224), 
+                                        cv::Scalar(0.485, 0.456, 0.406), 
+                                        true, false);
+    net.setInput(blob);
+    
+    // Get features from the network
+    cv::Mat drone_features = net.forward("pool6");  // Layer name may vary based on model
+    
+    // Match against reference crops
+    std::vector<std::pair<int, double>> match_scores;
+    
+    for (size_t idx = 0; idx < ref_crop_coords.size(); idx++) {
+        const auto &coords = ref_crop_coords[idx];
+        const cv::Mat &ref_crop = reference_crops.at(coords);
+        
+        // Process reference crop and get features
+        cv::Mat ref_blob = cv::dnn::blobFromImage(ref_crop, 1.0/255.0, 
+                                              cv::Size(224, 224), 
+                                              cv::Scalar(0.485, 0.456, 0.406), 
+                                              true, false);
+        net.setInput(ref_blob);
+        cv::Mat ref_features = net.forward("pool6");
+        
+        // Calculate similarity (cosine similarity)
+        double similarity = drone_features.dot(ref_features) / 
+                           (cv::norm(drone_features) * cv::norm(ref_features) + 1e-5);
+        
+        match_scores.push_back({idx, similarity});
+    }
+    
+       
+    // Sort scores
+    std::sort(match_scores.begin(), match_scores.end(),
+             [](const auto &a, const auto &b) { return a.second > b.second; });
+    
+    // Return best match
+    if (match_scores.empty()) {
+        return {0.0, 0.0};
+    }
+    
+    int best_idx = match_scores[0].first;
+    return ref_crop_coords[best_idx];
 }

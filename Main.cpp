@@ -127,8 +127,25 @@ std::string readApiKey(const std::string& configPath = "config.ini") {
     return "";
 }
 
-int main()
+int main(int argc, char** argv)
 {
+    // Parse command line arguments for algorithm selection
+    PositionAlgorithm algorithm = PositionAlgorithm::HYBRID;
+    
+    if (argc > 1) {
+        std::string algo_str = argv[1];
+        if (algo_str == "template" || algo_str == "TEMPLATE")
+            algorithm = PositionAlgorithm::TEMPLATE;
+        else if (algo_str == "orb" || algo_str == "ORB")
+            algorithm = PositionAlgorithm::ORB;
+        else if (algo_str == "dnn" || algo_str == "DNN")
+            algorithm = PositionAlgorithm::DNN;
+        else if (algo_str == "smoothed" || algo_str == "SMOOTHED")
+            algorithm = PositionAlgorithm::SMOOTHED;
+        else if (algo_str == "hybrid" || algo_str == "HYBRID")
+            algorithm = PositionAlgorithm::HYBRID;
+    }
+    
     // --- Customize these ---
     const std::string apiKey = readApiKey();
     if (apiKey.empty()) {
@@ -334,7 +351,8 @@ int main()
         meters_per_degree_lat, meters_per_degree_lng,
         lat, lng,                         // Map center
         (width * scale) / 2, (height * scale) / 2, // Pixel center
-        mpp                                        // Meters per pixel
+        mpp,                                        // Meters per pixel
+        algorithm
     );
     
     // ------ Define Second Path (Zigzag/Curved) ------
@@ -497,7 +515,8 @@ int main()
         meters_per_degree_lat, meters_per_degree_lng,
         lat, lng,
         (width * scale) / 2, (height * scale) / 2,
-        mpp
+        mpp,
+        algorithm
     );
 
     return 0;

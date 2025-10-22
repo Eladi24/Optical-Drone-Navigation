@@ -5,6 +5,14 @@
 #include <utility>
 #include <random>
 
+enum class PositionAlgorithm {
+    TEMPLATE,    // Template matching only
+    ORB,         // ORB feature matching
+    DNN,         // Deep neural network features
+    HYBRID,      // Combination of methods (your current approach)
+    SMOOTHED     // Smoothed weighted average method
+};
+
 class DroneSimulation
 {
     private:
@@ -71,7 +79,8 @@ void runDroneSimulation(
     double meters_per_degree_lat, double meters_per_degree_lng,
     double center_lat, double center_lng,
     int center_x, int center_y,
-    double mpp);
+    double mpp,
+    PositionAlgorithm algorithm = PositionAlgorithm::HYBRID);
 
 void runDroneSimulationWithWaypoints(
     const cv::Mat &clean_map,
@@ -80,7 +89,8 @@ void runDroneSimulationWithWaypoints(
     double meters_per_degree_lat, double meters_per_degree_lng,
     double center_lat, double center_lng,
     int center_x, int center_y,
-    double mpp);
+    double mpp,
+    PositionAlgorithm algorithm = PositionAlgorithm::HYBRID);
 
 std::tuple<std::pair<double, double>, double, int> estimatePositionFromImage(
     const cv::Mat &drone_view,
@@ -111,3 +121,8 @@ std::tuple<std::pair<double, double>, double, int> estimatePositionHybrid(
     const std::vector<std::pair<double, double>> &ref_crop_coords,
     const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash> &reference_crops,
     const std::pair<double, double> &last_position);
+
+std::pair<double, double> estimatePositionWithDNN(
+    const cv::Mat &drone_view,
+    const std::vector<std::pair<double, double>> &ref_crop_coords,
+    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash> &reference_crops);
