@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/eladubuntu/Optical-Drone-Navigation/TemplateMatching.cpp" "CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o" "gcc" "CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o.d"
+  "/home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp" "CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o" "gcc" "CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o.d"
   )
 
 # Targets to which this target links.

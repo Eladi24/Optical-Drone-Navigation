@@ -8,7 +8,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 
 # The set of dependency files which are needed:
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
-  "/home/eladubuntu/Optical-Drone-Navigation/Main.cpp" "CMakeFiles/Main.dir/Main.cpp.o" "gcc" "CMakeFiles/Main.dir/Main.cpp.o.d"
+  "/home/eladubuntu/Optical-Drone-Navigation/src/Main.cpp" "CMakeFiles/Main.dir/src/Main.cpp.o" "gcc" "CMakeFiles/Main.dir/src/Main.cpp.o.d"
   )
 
 # Targets to which this target links.

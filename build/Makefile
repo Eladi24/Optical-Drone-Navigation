@@ -142,53 +142,53 @@ Main/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/build
 .PHONY : Main/fast
 
-Main.o: Main.cpp.o
-.PHONY : Main.o
+src/Main.o: src/Main.cpp.o
+.PHONY : src/Main.o
 
 # target to build an object file
-Main.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/Main.cpp.o
-.PHONY : Main.cpp.o
+src/Main.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/src/Main.cpp.o
+.PHONY : src/Main.cpp.o
 
-Main.i: Main.cpp.i
-.PHONY : Main.i
+src/Main.i: src/Main.cpp.i
+.PHONY : src/Main.i
 
 # target to preprocess a source file
-Main.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/Main.cpp.i
-.PHONY : Main.cpp.i
+src/Main.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/src/Main.cpp.i
+.PHONY : src/Main.cpp.i
 
-Main.s: Main.cpp.s
-.PHONY : Main.s
+src/Main.s: src/Main.cpp.s
+.PHONY : src/Main.s
 
 # target to generate assembly for a file
-Main.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/Main.cpp.s
-.PHONY : Main.cpp.s
+src/Main.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/src/Main.cpp.s
+.PHONY : src/Main.cpp.s
 
-TemplateMatching.o: TemplateMatching.cpp.o
-.PHONY : TemplateMatching.o
+src/TemplateMatching.o: src/TemplateMatching.cpp.o
+.PHONY : src/TemplateMatching.o
 
 # target to build an object file
-TemplateMatching.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o
-.PHONY : TemplateMatching.cpp.o
+src/TemplateMatching.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o
+.PHONY : src/TemplateMatching.cpp.o
 
-TemplateMatching.i: TemplateMatching.cpp.i
-.PHONY : TemplateMatching.i
+src/TemplateMatching.i: src/TemplateMatching.cpp.i
+.PHONY : src/TemplateMatching.i
 
 # target to preprocess a source file
-TemplateMatching.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.i
-.PHONY : TemplateMatching.cpp.i
+src/TemplateMatching.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.i
+.PHONY : src/TemplateMatching.cpp.i
 
-TemplateMatching.s: TemplateMatching.cpp.s
-.PHONY : TemplateMatching.s
+src/TemplateMatching.s: src/TemplateMatching.cpp.s
+.PHONY : src/TemplateMatching.s
 
 # target to generate assembly for a file
-TemplateMatching.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.s
-.PHONY : TemplateMatching.cpp.s
+src/TemplateMatching.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.s
+.PHONY : src/TemplateMatching.cpp.s
 
 # Help Target
 help:
@@ -200,12 +200,12 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... Main"
 	@echo "... TemplateMatching"
-	@echo "... Main.o"
-	@echo "... Main.i"
-	@echo "... Main.s"
-	@echo "... TemplateMatching.o"
-	@echo "... TemplateMatching.i"
-	@echo "... TemplateMatching.s"
+	@echo "... src/Main.o"
+	@echo "... src/Main.i"
+	@echo "... src/Main.s"
+	@echo "... src/TemplateMatching.o"
+	@echo "... src/TemplateMatching.i"
+	@echo "... src/TemplateMatching.s"
 .PHONY : help
 
 

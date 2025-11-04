@@ -23,13 +23,14 @@ find_package(CURL REQUIRED)
 
 # Add include directories
 include_directories(${OpenCV_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} .)
+include_directories(${CMAKE_SOURCE_DIR}/include) 
 
 # Build TemplateMatching as a library instead of an executable
-add_library(TemplateMatching TemplateMatching.cpp)
+add_library(TemplateMatching src/TemplateMatching.cpp)
 target_link_libraries(TemplateMatching ${OpenCV_LIBS})
 
 # ----- Google Maps + OpenCV sample -----
-add_executable(Main Main.cpp)
+add_executable(Main src/Main.cpp)
 target_link_libraries(Main ${OpenCV_LIBS} ${CURL_LIBRARIES} TemplateMatching)
 
 # Coverage target to generate HTML report with lcov

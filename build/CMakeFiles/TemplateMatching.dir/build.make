@@ -69,28 +69,28 @@ include CMakeFiles/TemplateMatching.dir/progress.make
 # Include the compile flags for this target's objects.
 include CMakeFiles/TemplateMatching.dir/flags.make
 
-CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o: CMakeFiles/TemplateMatching.dir/flags.make
-CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o: ../TemplateMatching.cpp
-CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o: CMakeFiles/TemplateMatching.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o -MF CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o.d -o CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/TemplateMatching.cpp
+CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o: CMakeFiles/TemplateMatching.dir/flags.make
+CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o: ../src/TemplateMatching.cpp
+CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o: CMakeFiles/TemplateMatching.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o -MF CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o.d -o CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp
 
-CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.i"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/TemplateMatching.cpp > CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.i
+CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.i"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp > CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.i
 
-CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.s"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/TemplateMatching.cpp -o CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.s
+CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.s"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp -o CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.s
 
 # Object files for target TemplateMatching
 TemplateMatching_OBJECTS = \
-"CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o"
+"CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o"
 
 # External object files for target TemplateMatching
 TemplateMatching_EXTERNAL_OBJECTS =
 
-libTemplateMatching.a: CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o
+libTemplateMatching.a: CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o
 libTemplateMatching.a: CMakeFiles/TemplateMatching.dir/build.make
 libTemplateMatching.a: CMakeFiles/TemplateMatching.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX static library libTemplateMatching.a"

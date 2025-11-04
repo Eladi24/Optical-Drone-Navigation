@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o"
-  "CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o.d"
+  "CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o"
+  "CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o.d"
   "libTemplateMatching.a"
   "libTemplateMatching.pdb"
 )

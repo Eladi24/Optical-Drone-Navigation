@@ -4,7 +4,7 @@
 # compile CXX with /usr/bin/g++
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/eladubuntu/Optical-Drone-Navigation/. -isystem /usr/local/include/opencv4
+CXX_INCLUDES = -I/home/eladubuntu/Optical-Drone-Navigation/. -I/home/eladubuntu/Optical-Drone-Navigation/include -isystem /usr/local/include/opencv4
 
 CXX_FLAGS = -g -std=c++20
 
