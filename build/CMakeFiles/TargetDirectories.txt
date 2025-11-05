@@ -1,4 +1,4 @@
-/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles/TemplateMatching.dir
+/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles/DroneNavigation.dir
 /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles/Main.dir
 /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles/edit_cache.dir
 /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles/rebuild_cache.dir

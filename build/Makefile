@@ -117,17 +117,17 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named TemplateMatching
+# Target rules for targets named DroneNavigation
 
 # Build rule for target.
-TemplateMatching: cmake_check_build_system
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 TemplateMatching
-.PHONY : TemplateMatching
+DroneNavigation: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 DroneNavigation
+.PHONY : DroneNavigation
 
 # fast build rule for target.
-TemplateMatching/fast:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/build
-.PHONY : TemplateMatching/fast
+DroneNavigation/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/build
+.PHONY : DroneNavigation/fast
 
 #=============================================================================
 # Target rules for targets named Main
@@ -141,6 +141,54 @@ Main: cmake_check_build_system
 Main/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/build
 .PHONY : Main/fast
+
+src/DroneSimulation.o: src/DroneSimulation.cpp.o
+.PHONY : src/DroneSimulation.o
+
+# target to build an object file
+src/DroneSimulation.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.o
+.PHONY : src/DroneSimulation.cpp.o
+
+src/DroneSimulation.i: src/DroneSimulation.cpp.i
+.PHONY : src/DroneSimulation.i
+
+# target to preprocess a source file
+src/DroneSimulation.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.i
+.PHONY : src/DroneSimulation.cpp.i
+
+src/DroneSimulation.s: src/DroneSimulation.cpp.s
+.PHONY : src/DroneSimulation.s
+
+# target to generate assembly for a file
+src/DroneSimulation.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.s
+.PHONY : src/DroneSimulation.cpp.s
+
+src/HybridEstimator.o: src/HybridEstimator.cpp.o
+.PHONY : src/HybridEstimator.o
+
+# target to build an object file
+src/HybridEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.o
+.PHONY : src/HybridEstimator.cpp.o
+
+src/HybridEstimator.i: src/HybridEstimator.cpp.i
+.PHONY : src/HybridEstimator.i
+
+# target to preprocess a source file
+src/HybridEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.i
+.PHONY : src/HybridEstimator.cpp.i
+
+src/HybridEstimator.s: src/HybridEstimator.cpp.s
+.PHONY : src/HybridEstimator.s
+
+# target to generate assembly for a file
+src/HybridEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.s
+.PHONY : src/HybridEstimator.cpp.s
 
 src/Main.o: src/Main.cpp.o
 .PHONY : src/Main.o
@@ -166,12 +214,108 @@ src/Main.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/src/Main.cpp.s
 .PHONY : src/Main.cpp.s
 
+src/ORBFeatureEstimator.o: src/ORBFeatureEstimator.cpp.o
+.PHONY : src/ORBFeatureEstimator.o
+
+# target to build an object file
+src/ORBFeatureEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o
+.PHONY : src/ORBFeatureEstimator.cpp.o
+
+src/ORBFeatureEstimator.i: src/ORBFeatureEstimator.cpp.i
+.PHONY : src/ORBFeatureEstimator.i
+
+# target to preprocess a source file
+src/ORBFeatureEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.i
+.PHONY : src/ORBFeatureEstimator.cpp.i
+
+src/ORBFeatureEstimator.s: src/ORBFeatureEstimator.cpp.s
+.PHONY : src/ORBFeatureEstimator.s
+
+# target to generate assembly for a file
+src/ORBFeatureEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.s
+.PHONY : src/ORBFeatureEstimator.cpp.s
+
+src/SIFTFeatureEstimator.o: src/SIFTFeatureEstimator.cpp.o
+.PHONY : src/SIFTFeatureEstimator.o
+
+# target to build an object file
+src/SIFTFeatureEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.o
+.PHONY : src/SIFTFeatureEstimator.cpp.o
+
+src/SIFTFeatureEstimator.i: src/SIFTFeatureEstimator.cpp.i
+.PHONY : src/SIFTFeatureEstimator.i
+
+# target to preprocess a source file
+src/SIFTFeatureEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.i
+.PHONY : src/SIFTFeatureEstimator.cpp.i
+
+src/SIFTFeatureEstimator.s: src/SIFTFeatureEstimator.cpp.s
+.PHONY : src/SIFTFeatureEstimator.s
+
+# target to generate assembly for a file
+src/SIFTFeatureEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.s
+.PHONY : src/SIFTFeatureEstimator.cpp.s
+
+src/SURFFeatureEstimator.o: src/SURFFeatureEstimator.cpp.o
+.PHONY : src/SURFFeatureEstimator.o
+
+# target to build an object file
+src/SURFFeatureEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SURFFeatureEstimator.cpp.o
+.PHONY : src/SURFFeatureEstimator.cpp.o
+
+src/SURFFeatureEstimator.i: src/SURFFeatureEstimator.cpp.i
+.PHONY : src/SURFFeatureEstimator.i
+
+# target to preprocess a source file
+src/SURFFeatureEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SURFFeatureEstimator.cpp.i
+.PHONY : src/SURFFeatureEstimator.cpp.i
+
+src/SURFFeatureEstimator.s: src/SURFFeatureEstimator.cpp.s
+.PHONY : src/SURFFeatureEstimator.s
+
+# target to generate assembly for a file
+src/SURFFeatureEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SURFFeatureEstimator.cpp.s
+.PHONY : src/SURFFeatureEstimator.cpp.s
+
+src/SmoothedEstimator.o: src/SmoothedEstimator.cpp.o
+.PHONY : src/SmoothedEstimator.o
+
+# target to build an object file
+src/SmoothedEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.o
+.PHONY : src/SmoothedEstimator.cpp.o
+
+src/SmoothedEstimator.i: src/SmoothedEstimator.cpp.i
+.PHONY : src/SmoothedEstimator.i
+
+# target to preprocess a source file
+src/SmoothedEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.i
+.PHONY : src/SmoothedEstimator.cpp.i
+
+src/SmoothedEstimator.s: src/SmoothedEstimator.cpp.s
+.PHONY : src/SmoothedEstimator.s
+
+# target to generate assembly for a file
+src/SmoothedEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.s
+.PHONY : src/SmoothedEstimator.cpp.s
+
 src/TemplateMatching.o: src/TemplateMatching.cpp.o
 .PHONY : src/TemplateMatching.o
 
 # target to build an object file
 src/TemplateMatching.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.o
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o
 .PHONY : src/TemplateMatching.cpp.o
 
 src/TemplateMatching.i: src/TemplateMatching.cpp.i
@@ -179,7 +323,7 @@ src/TemplateMatching.i: src/TemplateMatching.cpp.i
 
 # target to preprocess a source file
 src/TemplateMatching.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.i
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.i
 .PHONY : src/TemplateMatching.cpp.i
 
 src/TemplateMatching.s: src/TemplateMatching.cpp.s
@@ -187,8 +331,56 @@ src/TemplateMatching.s: src/TemplateMatching.cpp.s
 
 # target to generate assembly for a file
 src/TemplateMatching.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/src/TemplateMatching.cpp.s
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.s
 .PHONY : src/TemplateMatching.cpp.s
+
+src/TemplateMatchingEstimator.o: src/TemplateMatchingEstimator.cpp.o
+.PHONY : src/TemplateMatchingEstimator.o
+
+# target to build an object file
+src/TemplateMatchingEstimator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimator.cpp.o
+.PHONY : src/TemplateMatchingEstimator.cpp.o
+
+src/TemplateMatchingEstimator.i: src/TemplateMatchingEstimator.cpp.i
+.PHONY : src/TemplateMatchingEstimator.i
+
+# target to preprocess a source file
+src/TemplateMatchingEstimator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimator.cpp.i
+.PHONY : src/TemplateMatchingEstimator.cpp.i
+
+src/TemplateMatchingEstimator.s: src/TemplateMatchingEstimator.cpp.s
+.PHONY : src/TemplateMatchingEstimator.s
+
+# target to generate assembly for a file
+src/TemplateMatchingEstimator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimator.cpp.s
+.PHONY : src/TemplateMatchingEstimator.cpp.s
+
+src/Visualization.o: src/Visualization.cpp.o
+.PHONY : src/Visualization.o
+
+# target to build an object file
+src/Visualization.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o
+.PHONY : src/Visualization.cpp.o
+
+src/Visualization.i: src/Visualization.cpp.i
+.PHONY : src/Visualization.i
+
+# target to preprocess a source file
+src/Visualization.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.i
+.PHONY : src/Visualization.cpp.i
+
+src/Visualization.s: src/Visualization.cpp.s
+.PHONY : src/Visualization.s
+
+# target to generate assembly for a file
+src/Visualization.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.s
+.PHONY : src/Visualization.cpp.s
 
 # Help Target
 help:
@@ -198,14 +390,38 @@ help:
 	@echo "... depend"
 	@echo "... edit_cache"
 	@echo "... rebuild_cache"
+	@echo "... DroneNavigation"
 	@echo "... Main"
-	@echo "... TemplateMatching"
+	@echo "... src/DroneSimulation.o"
+	@echo "... src/DroneSimulation.i"
+	@echo "... src/DroneSimulation.s"
+	@echo "... src/HybridEstimator.o"
+	@echo "... src/HybridEstimator.i"
+	@echo "... src/HybridEstimator.s"
 	@echo "... src/Main.o"
 	@echo "... src/Main.i"
 	@echo "... src/Main.s"
+	@echo "... src/ORBFeatureEstimator.o"
+	@echo "... src/ORBFeatureEstimator.i"
+	@echo "... src/ORBFeatureEstimator.s"
+	@echo "... src/SIFTFeatureEstimator.o"
+	@echo "... src/SIFTFeatureEstimator.i"
+	@echo "... src/SIFTFeatureEstimator.s"
+	@echo "... src/SURFFeatureEstimator.o"
+	@echo "... src/SURFFeatureEstimator.i"
+	@echo "... src/SURFFeatureEstimator.s"
+	@echo "... src/SmoothedEstimator.o"
+	@echo "... src/SmoothedEstimator.i"
+	@echo "... src/SmoothedEstimator.s"
 	@echo "... src/TemplateMatching.o"
 	@echo "... src/TemplateMatching.i"
 	@echo "... src/TemplateMatching.s"
+	@echo "... src/TemplateMatchingEstimator.o"
+	@echo "... src/TemplateMatchingEstimator.i"
+	@echo "... src/TemplateMatchingEstimator.s"
+	@echo "... src/Visualization.o"
+	@echo "... src/Visualization.i"
+	@echo "... src/Visualization.s"
 .PHONY : help
 
 

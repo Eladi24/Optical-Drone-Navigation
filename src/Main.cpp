@@ -138,8 +138,10 @@ int main(int argc, char** argv)
             algorithm = PositionAlgorithm::TEMPLATE;
         else if (algo_str == "orb" || algo_str == "ORB")
             algorithm = PositionAlgorithm::ORB;
-        else if (algo_str == "dnn" || algo_str == "DNN")
-            algorithm = PositionAlgorithm::DNN;
+        else if (algo_str == "sift" || algo_str == "SIFT")
+            algorithm = PositionAlgorithm::SIFT;
+        else if (algo_str == "surf" || algo_str == "SURF")
+            algorithm = PositionAlgorithm::SURF;
         else if (algo_str == "smoothed" || algo_str == "SMOOTHED")
             algorithm = PositionAlgorithm::SMOOTHED;
         else if (algo_str == "hybrid" || algo_str == "HYBRID")
@@ -344,10 +346,13 @@ int main(int argc, char** argv)
     matchCropsOnMap(clean_map, crops);
 
     std::cout << "\nStarting drone flight simulation..." << std::endl;
+    std::vector<std::pair<double, double>> waypoints = {
+        {path_start_lat, path_start_lng},
+        {path_end_lat, path_end_lng}
+    };
     runDroneSimulation(
         clean_map, crops,
-        path_start_lat, path_start_lng, // Start coordinates
-        path_end_lat, path_end_lng,     // End coordinates
+        waypoints,
         meters_per_degree_lat, meters_per_degree_lng,
         lat, lng,                         // Map center
         (width * scale) / 2, (height * scale) / 2, // Pixel center
@@ -509,7 +514,7 @@ int main(int argc, char** argv)
     
     // Run simulation for zigzag path using the waypoint-based simulation
     std::cout << "\nStarting drone flight simulation for Path 2 (Zigzag)..." << std::endl;
-    runDroneSimulationWithWaypoints(
+    runDroneSimulation(
         clean_map, zigzag_crops,
         zigzag_waypoints,  // Pass the vector of waypoints
         meters_per_degree_lat, meters_per_degree_lng,

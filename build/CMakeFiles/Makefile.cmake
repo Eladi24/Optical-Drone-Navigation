@@ -48,6 +48,6 @@ set(CMAKE_MAKEFILE_PRODUCTS
 
 # Dependency information for all targets:
 set(CMAKE_DEPEND_INFO_FILES
-  "CMakeFiles/TemplateMatching.dir/DependInfo.cmake"
+  "CMakeFiles/DroneNavigation.dir/DependInfo.cmake"
   "CMakeFiles/Main.dir/DependInfo.cmake"
   )

@@ -63,7 +63,7 @@ CMAKE_BINARY_DIR = /home/eladubuntu/Optical-Drone-Navigation/build
 # Directory level rules for the build root directory
 
 # The main recursive "all" target.
-all: CMakeFiles/TemplateMatching.dir/all
+all: CMakeFiles/DroneNavigation.dir/all
 all: CMakeFiles/Main.dir/all
 .PHONY : all
 
@@ -72,49 +72,49 @@ preinstall:
 .PHONY : preinstall
 
 # The main recursive "clean" target.
-clean: CMakeFiles/TemplateMatching.dir/clean
+clean: CMakeFiles/DroneNavigation.dir/clean
 clean: CMakeFiles/Main.dir/clean
 .PHONY : clean
 
 #=============================================================================
-# Target rules for target CMakeFiles/TemplateMatching.dir
+# Target rules for target CMakeFiles/DroneNavigation.dir
 
 # All Build rule for target.
-CMakeFiles/TemplateMatching.dir/all:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/depend
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=3,4 "Built target TemplateMatching"
-.PHONY : CMakeFiles/TemplateMatching.dir/all
+CMakeFiles/DroneNavigation.dir/all:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/depend
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=1,2,3,4,5,6,7,8,9,10 "Built target DroneNavigation"
+.PHONY : CMakeFiles/DroneNavigation.dir/all
 
 # Build rule for subdir invocation for target.
-CMakeFiles/TemplateMatching.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 2
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/TemplateMatching.dir/all
+CMakeFiles/DroneNavigation.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 10
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/DroneNavigation.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 0
-.PHONY : CMakeFiles/TemplateMatching.dir/rule
+.PHONY : CMakeFiles/DroneNavigation.dir/rule
 
 # Convenience name for target.
-TemplateMatching: CMakeFiles/TemplateMatching.dir/rule
-.PHONY : TemplateMatching
+DroneNavigation: CMakeFiles/DroneNavigation.dir/rule
+.PHONY : DroneNavigation
 
 # clean rule for target.
-CMakeFiles/TemplateMatching.dir/clean:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/TemplateMatching.dir/build.make CMakeFiles/TemplateMatching.dir/clean
-.PHONY : CMakeFiles/TemplateMatching.dir/clean
+CMakeFiles/DroneNavigation.dir/clean:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/clean
+.PHONY : CMakeFiles/DroneNavigation.dir/clean
 
 #=============================================================================
 # Target rules for target CMakeFiles/Main.dir
 
 # All Build rule for target.
-CMakeFiles/Main.dir/all: CMakeFiles/TemplateMatching.dir/all
+CMakeFiles/Main.dir/all: CMakeFiles/DroneNavigation.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=1,2 "Built target Main"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=11,12 "Built target Main"
 .PHONY : CMakeFiles/Main.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/Main.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 12
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/Main.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles 0
 .PHONY : CMakeFiles/Main.dir/rule

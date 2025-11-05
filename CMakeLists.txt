@@ -26,12 +26,33 @@ include_directories(${OpenCV_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} .)
 include_directories(${CMAKE_SOURCE_DIR}/include) 
 
 # Build TemplateMatching as a library instead of an executable
-add_library(TemplateMatching src/TemplateMatching.cpp)
-target_link_libraries(TemplateMatching ${OpenCV_LIBS})
+add_library(DroneNavigation
+    # Core simulation
+    src/DroneSimulation.cpp
+    
+    # Algorithms (add as you create them)
+    src/TemplateMatching.cpp
+    src/ORBFeatureEstimator.cpp
+    src/SIFTFeatureEstimator.cpp
+    src/SURFFeatureEstimator.cpp
+    src/TemplateMatchingEstimator.cpp
+    src/HybridEstimator.cpp
+    src/SmoothedEstimator.cpp
+    
+    # Visualization (add as you create them)
+    src/Visualization.cpp
+    # src/TelemetryVisualizer.cpp
+    # src/ErrorGraphVisualizer.cpp
+    
+    # Utils (add as you create them)
+    # src/CoordinateUtils.cpp
+    # src/FileUtils.cpp
+)
+target_link_libraries(DroneNavigation ${OpenCV_LIBS})
 
 # ----- Google Maps + OpenCV sample -----
 add_executable(Main src/Main.cpp)
-target_link_libraries(Main ${OpenCV_LIBS} ${CURL_LIBRARIES} TemplateMatching)
+target_link_libraries(Main ${OpenCV_LIBS} ${CURL_LIBRARIES} DroneNavigation)
 
 # Coverage target to generate HTML report with lcov
 if(ENABLE_COVERAGE)

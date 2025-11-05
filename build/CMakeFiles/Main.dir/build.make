@@ -93,7 +93,7 @@ Main_EXTERNAL_OBJECTS =
 Main: CMakeFiles/Main.dir/src/Main.cpp.o
 Main: CMakeFiles/Main.dir/build.make
 Main: /usr/lib/x86_64-linux-gnu/libcurl.so
-Main: libTemplateMatching.a
+Main: libDroneNavigation.a
 Main: /usr/local/lib/libopencv_gapi.so.4.10.0
 Main: /usr/local/lib/libopencv_stitching.so.4.10.0
 Main: /usr/local/lib/libopencv_aruco.so.4.10.0
