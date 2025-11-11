@@ -2,6 +2,8 @@
 #include <opencv2/imgproc.hpp>
 #include <iostream>
 #include <fstream>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -9,7 +11,7 @@
 #include <iomanip>
 #include <sstream>
 #include <memory>
-#include "TemplateMatching.hpp"
+#include "FlightSimulation.hpp"
 #include "TemplateMatchingEstimator.hpp"
 #include "ORBFeatureEstimator.hpp"
 #include "SIFTFeatureEstimator.hpp"
@@ -17,6 +19,7 @@
 #include "HybridEstimator.hpp"
 #include "SmoothedEstimator.hpp"
 #include "Visualization.hpp"
+#include "CoordinateUtils.hpp"
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm) {
     switch(algorithm) {

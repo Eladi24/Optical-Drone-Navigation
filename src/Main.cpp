@@ -6,7 +6,8 @@
 #include <cmath>
 #include <sstream>
 #include <iomanip>
-#include "TemplateMatching.hpp"
+#include "FlightSimulation.hpp"
+#include "CoordinateUtils.hpp"
 #include <fstream>
 
 // Write callback to collect binary data into a byte buffer
@@ -118,6 +119,101 @@ std::string readApiKey(const std::string& configPath = "config.ini") {
     
     std::cerr << "Error: API key not found in config file" << std::endl;
     return "";
+}
+
+struct PathConfig {
+    std::string name;
+    std::string color;
+    std::string start_marker_color;
+    std::string end_marker_color;
+    std::vector<std::pair<double, double>> waypoints;
+    std::vector<std::pair<double, double>> sample_points;
+};
+
+void processAndSimulatePath(
+    const PathConfig& config,
+    const cv::Mat& clean_map,
+    const std::string& apiKey,
+    double lat, double lng, int zoom, int width, int height, 
+    int scale, const std::string& maptype,
+    int center_x, int center_y, double mpp, int crop_size,
+    double meters_per_degree_lat, double meters_per_degree_lng,
+    PositionAlgorithm algorithm)
+{
+    // Generate map URL
+    std::ostringstream url_ss;
+    url_ss << "https://maps.googleapis.com/maps/api/staticmap?"
+           << "center=" << lat << "," << lng
+           << "&zoom=" << zoom << "&size=" << width << "x" << height
+           << "&maptype=" << maptype << "&scale=" << scale
+           << "&path=color:" << config.color << "|weight:5";
+    
+    for (const auto& point : config.waypoints) {
+        url_ss << "|" << point.first << "," << point.second;
+    }
+    
+    url_ss << "&markers=color:" << config.start_marker_color << "|label:S|" 
+           << config.waypoints.front().first << "," << config.waypoints.front().second
+           << "&markers=color:" << config.end_marker_color << "|label:E|"
+           << config.waypoints.back().first << "," << config.waypoints.back().second;
+    
+    url_ss << "&markers=color:yellow|size:small";
+    for (const auto& point : config.sample_points) {
+        url_ss << "|" << point.first << "," << point.second;
+    }
+    url_ss << "&key=" << apiKey;
+    
+    // Fetch and save map
+    cv::Mat path_map = fetchMapImage(url_ss.str());
+    if (path_map.empty()) {
+        std::cerr << "Failed to fetch " << config.name << " map\n";
+        return;
+    }
+    cv::imwrite("Images/map_" + config.name + ".png", path_map);
+    
+    // Generate crops
+    std::vector<ReferenceCrop> crops;
+    for (const auto& point : config.sample_points) {
+        cv::Point pt = CoordinateUtils::latLngToPixel(
+            point.first, point.second,
+            lat, lng, center_x, center_y, mpp,
+            meters_per_degree_lat, meters_per_degree_lng);
+        
+        cv::Rect crop_rect(pt.x - crop_size / 2, pt.y - crop_size / 2, 
+                          crop_size, crop_size);
+        crop_rect = crop_rect & cv::Rect(0, 0, clean_map.cols, clean_map.rows);
+        
+        if (crop_rect.width > 0 && crop_rect.height > 0) {
+            cv::Mat cropped = clean_map(crop_rect).clone();
+            crops.push_back({point, cropped});
+        }
+    }
+    
+    // Display
+    cv::namedWindow("Map with " + config.name + " Path", cv::WINDOW_NORMAL);
+    cv::imshow("Map with " + config.name + " Path", path_map);
+    
+    for (int i = 0; i < crops.size(); i++) {
+        std::ostringstream window_name;
+        window_name << config.name << " Crop " << i << " - Coordinates: "
+                    << std::fixed << std::setprecision(6)
+                    << crops[i].coordinates.first << ", " << crops[i].coordinates.second;
+        cv::namedWindow(window_name.str(), cv::WINDOW_AUTOSIZE);
+        cv::imshow(window_name.str(), crops[i].image);
+    }
+    
+    std::cout << "Displaying " << crops.size() << " crops from " << config.name << " path" << std::endl;
+    std::cout << "Press any key to continue" << std::endl;
+    cv::waitKey(0);
+    
+    // Match and simulate
+    std::cout << "\nPerforming template matching for " << config.name << " path crops..." << std::endl;
+    matchCropsOnMap(clean_map, crops);
+    
+    std::cout << "\nStarting drone flight simulation for " << config.name << "..." << std::endl;
+    runDroneSimulation(clean_map, crops, config.waypoints,
+                      meters_per_degree_lat, meters_per_degree_lng,
+                      lat, lng, center_x, center_y, mpp, algorithm);
 }
 
 int main(int argc, char** argv)
@@ -261,18 +357,14 @@ int main(int argc, char** argv)
     {
         const auto &point = sample_points[i];
 
-        double lat_diff = point.first - lat;
-        double lng_diff = point.second - lng;
-
-        int y_offset = static_cast<int>(-(lat_diff * meters_per_degree_lat) / mpp);
-        int x_offset = static_cast<int>((lng_diff * meters_per_degree_lng) / mpp);
-
-        int px = center_x + x_offset;
-        int py = center_y + y_offset;
+        cv::Point pt = CoordinateUtils::latLngToPixel(
+            point.first, point.second,
+            lat, lng, center_x, center_y, mpp,
+            meters_per_degree_lat, meters_per_degree_lng);
 
         cv::Rect crop_rect(
-            px - crop_size / 2,
-            py - crop_size / 2,
+            pt.x - crop_size / 2,
+            pt.y - crop_size / 2,
             crop_size,
             crop_size);
 
@@ -324,140 +416,65 @@ int main(int argc, char** argv)
         algorithm
     );
     
-    std::vector<std::pair<double, double>> zigzag_waypoints;
+    // Diagonal Path
+    PathConfig diagonal_path;
+    diagonal_path.name = "diagonal";
+    diagonal_path.color = "0x0000FF";
+    diagonal_path.start_marker_color = "red";
+    diagonal_path.end_marker_color = "green";
+    diagonal_path.waypoints = {{path_start_lat, path_start_lng}, {path_end_lat, path_end_lng}};
     
-    zigzag_waypoints.push_back(std::make_pair(path_start_lat, path_start_lng));
+    for (int i = 0; i < 10; i++) {
+        double t = i / 9.0;
+        diagonal_path.sample_points.push_back({
+            path_start_lat + t * (path_end_lat - path_start_lat),
+            path_start_lng + t * (path_end_lng - path_start_lng)
+        });
+    }
     
+    processAndSimulatePath(diagonal_path, clean_map, apiKey, lat, lng, zoom, 
+                          width, height, scale, maptype, center_x, center_y, 
+                          mpp, crop_size, meters_per_degree_lat, 
+                          meters_per_degree_lng, algorithm);
+    
+    // Zigzag Path
+    PathConfig zigzag_path;
+    zigzag_path.name = "zigzag";
+    zigzag_path.color = "0xFF0000";
+    zigzag_path.start_marker_color = "blue";
+    zigzag_path.end_marker_color = "purple";
+    
+    // Build zigzag waypoints
     double step_size = lat_offset_path / 4.0;
+    zigzag_path.waypoints = {
+        {path_start_lat, path_start_lng},
+        {path_start_lat + step_size, path_start_lng + step_size},
+        {path_start_lat + 2 * step_size, path_start_lng},
+        {path_start_lat + 3 * step_size, path_start_lng + step_size},
+        {path_start_lat + 4 * step_size, path_start_lng},
+        {path_end_lat, path_start_lng + 0.5 * step_size}
+    };
     
-    zigzag_waypoints.push_back(std::make_pair(
-        path_start_lat + step_size,
-        path_start_lng + step_size
-    ));
-    
-    zigzag_waypoints.push_back(std::make_pair(
-        path_start_lat + 2 * step_size,
-        path_start_lng
-    ));
-    
-    zigzag_waypoints.push_back(std::make_pair(
-        path_start_lat + 3 * step_size,
-        path_start_lng + step_size
-    ));
-    
-    zigzag_waypoints.push_back(std::make_pair(
-        path_start_lat + 4 * step_size,
-        path_start_lng
-    ));
-    
-    const double zigzag_end_lat = path_end_lat;
-    const double zigzag_end_lng = path_start_lng + 0.5 * step_size;
-    zigzag_waypoints.push_back(std::make_pair(zigzag_end_lat, zigzag_end_lng));
-    
-    std::vector<std::pair<double, double>> zigzag_samples;
-    
-    for (size_t i = 0; i < zigzag_waypoints.size() - 1; i++) {
-        const auto& start = zigzag_waypoints[i];
-        const auto& end = zigzag_waypoints[i+1];
+    // Generate zigzag samples
+    for (size_t i = 0; i < zigzag_path.waypoints.size() - 1; i++) {
+        const auto& start = zigzag_path.waypoints[i];
+        const auto& end = zigzag_path.waypoints[i+1];
+        int points_per_segment = (i < zigzag_path.waypoints.size() - 2) ? 2 : 3;
         
-        int points_per_segment = (i < zigzag_waypoints.size() - 2) ? 2 : 3;
         for (int j = 0; j < points_per_segment; j++) {
             double t = j / static_cast<double>(points_per_segment);
-            double point_lat = start.first + t * (end.first - start.first);
-            double point_lng = start.second + t * (end.second - start.second);
-            zigzag_samples.push_back(std::make_pair(point_lat, point_lng));
+            zigzag_path.sample_points.push_back({
+                start.first + t * (end.first - start.first),
+                start.second + t * (end.second - start.second)
+            });
         }
     }
-    zigzag_samples.push_back(zigzag_waypoints.back());
+    zigzag_path.sample_points.push_back(zigzag_path.waypoints.back());
     
-    std::ostringstream zigzag_url_ss;
-    zigzag_url_ss << "https://maps.googleapis.com/maps/api/staticmap?"
-                  << "center=" << lat << "," << lng
-                  << "&zoom=" << zoom
-                  << "&size=" << width << "x" << height
-                  << "&maptype=" << maptype
-                  << "&scale=" << scale
-                  << "&path=color:0xFF0000|weight:5";
-                  
-    for (const auto& point : zigzag_waypoints) {
-        zigzag_url_ss << "|" << point.first << "," << point.second;
-    }
+    processAndSimulatePath(zigzag_path, clean_map, apiKey, lat, lng, zoom,
+                          width, height, scale, maptype, center_x, center_y,
+                          mpp, crop_size, meters_per_degree_lat,
+                          meters_per_degree_lng, algorithm);
     
-    zigzag_url_ss << "&markers=color:blue|label:S|" << path_start_lat << "," << path_start_lng
-                  << "&markers=color:purple|label:E|" << zigzag_end_lat << "," << zigzag_end_lng;
-    
-    zigzag_url_ss << "&markers=color:yellow|size:small";
-    for (const auto& point : zigzag_samples) {
-        zigzag_url_ss << "|" << point.first << "," << point.second;
-    }
-    
-    zigzag_url_ss << "&key=" << apiKey;
-    
-    cv::Mat zigzag_map = fetchMapImage(zigzag_url_ss.str());
-    if (zigzag_map.empty()) {
-        std::cerr << "Failed to fetch zigzag path map\n";
-    } else {
-        cv::imwrite("Images/map_zigzag.png", zigzag_map);
-        
-        cv::namedWindow("Map with Zigzag Path", cv::WINDOW_NORMAL);
-        cv::imshow("Map with Zigzag Path", zigzag_map);
-    }
-    
-    std::vector<ReferenceCrop> zigzag_crops;
-    
-    for (const auto& point : zigzag_samples) {
-        double lat_diff = point.first - lat;
-        double lng_diff = point.second - lng;
-        
-        int y_offset = static_cast<int>(-(lat_diff * meters_per_degree_lat) / mpp);
-        int x_offset = static_cast<int>((lng_diff * meters_per_degree_lng) / mpp);
-        
-        int px = center_x + x_offset;
-        int py = center_y + y_offset;
-        
-        cv::Rect crop_rect(
-            px - crop_size / 2,
-            py - crop_size / 2,
-            crop_size,
-            crop_size);
-            
-        crop_rect = crop_rect & cv::Rect(0, 0, clean_map.cols, clean_map.rows);
-        
-        if (crop_rect.width > 0 && crop_rect.height > 0) {
-            cv::Mat cropped = clean_map(crop_rect).clone();
-            zigzag_crops.push_back({point, cropped});
-        }
-    }
-    
-    i = 0;
-    for (const auto& crop : zigzag_crops) {
-        std::ostringstream window_name;
-        window_name << "Zigzag Crop " << i << " - Coordinates: "
-                    << std::fixed << std::setprecision(6)
-                    << crop.coordinates.first << ", " << crop.coordinates.second;
-                    
-        cv::namedWindow(window_name.str(), cv::WINDOW_AUTOSIZE);
-        cv::imshow(window_name.str(), crop.image);
-        i++;
-    }
-    
-    std::cout << "Displaying " << zigzag_crops.size() << " crops from the zigzag path" << std::endl;
-    std::cout << "Press any key to continue" << std::endl;
-    cv::waitKey(0);
-    
-    std::cout << "\nPerforming template matching for zigzag path crops..." << std::endl;
-    matchCropsOnMap(clean_map, zigzag_crops);
-    
-    std::cout << "\nStarting drone flight simulation for Path 2 (Zigzag)..." << std::endl;
-    runDroneSimulation(
-        clean_map, zigzag_crops,
-        zigzag_waypoints,
-        meters_per_degree_lat, meters_per_degree_lng,
-        lat, lng,
-        (width * scale) / 2, (height * scale) / 2,
-        mpp,
-        algorithm
-    );
-
     return 0;
 }

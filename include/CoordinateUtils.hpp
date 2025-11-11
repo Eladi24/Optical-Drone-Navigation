@@ -1,15 +1,9 @@
 // CoordinateUtils.hpp
-#pragma once
+#ifndef COORDINATEUTILS_HPP
+#define COORDINATEUTILS_HPP
 #include <utility>
 #include <opencv2/opencv.hpp>
 
-struct CoordinateHash {
-    std::size_t operator()(const std::pair<double, double> &p) const {
-        auto h1 = std::hash<double>{}(p.first);
-        auto h2 = std::hash<double>{}(p.second);
-        return h1 ^ (h2 << 1);
-    }
-};
 
 class CoordinateUtils {
 public:
@@ -29,3 +23,4 @@ public:
                                   double meters_per_degree_lat,
                                   double meters_per_degree_lng);
 };
+#endif // COORDINATEUTILS_HPP

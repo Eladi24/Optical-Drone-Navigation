@@ -1,4 +1,5 @@
 #include "DroneSimulation.hpp"
+#include "CoordinateUtils.hpp"
 
 void DroneSimulation::step(double dt_seconds, double correction_degrees)
 {
@@ -36,8 +37,14 @@ void DroneSimulation::step(double dt_seconds, double correction_degrees)
 
 void DroneSimulation::updateView(double center_lat, double center_lng, int center_x, int center_y, double mpp)
 {
-    // Convert drone position to pixel coordinates
-    cv::Point drone_pos = latLngToPixel(lat, lng, center_lat, center_lng, center_x, center_y, mpp);
+    // Convert drone position to pixel coordinates using CoordinateUtils
+    cv::Point drone_pos = CoordinateUtils::latLngToPixel(
+        lat, lng, 
+        center_lat, center_lng, 
+        center_x, center_y, 
+        mpp, 
+        meters_per_degree_lat, 
+        meters_per_degree_lng);
 
     // Calculate crop region for drone view
     cv::Rect view_rect(
@@ -59,12 +66,12 @@ void DroneSimulation::updateView(double center_lat, double center_lng, int cente
 cv::Point DroneSimulation::latLngToPixel(double lat, double lng, double center_lat, double center_lng,
                                          int center_x, int center_y, double mpp)
 {
-    double lat_diff = lat - center_lat; // Difference in latitude
-    double lng_diff = lng - center_lng; // Difference in longitude
-
-    int y_offset = static_cast<int>(-(lat_diff * meters_per_degree_lat) / mpp);
-    int x_offset = static_cast<int>((lng_diff * meters_per_degree_lng) / mpp);
-
-    return cv::Point(center_x + x_offset, center_y + y_offset);
+    return CoordinateUtils::latLngToPixel(
+        lat, lng,
+        center_lat, center_lng,
+        center_x, center_y,
+        mpp,
+        meters_per_degree_lat,
+        meters_per_degree_lng);
 }
 

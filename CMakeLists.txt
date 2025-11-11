@@ -31,7 +31,7 @@ add_library(DroneNavigation
     src/DroneSimulation.cpp
     
     # Algorithms (add as you create them)
-    src/TemplateMatching.cpp
+    src/FlightSimulation.cpp
     src/ORBFeatureEstimator.cpp
     src/SIFTFeatureEstimator.cpp
     src/SURFFeatureEstimator.cpp
@@ -41,7 +41,7 @@ add_library(DroneNavigation
     
     # Visualization (add as you create them)
     src/Visualization.cpp
-    # src/TelemetryVisualizer.cpp
+    src/CoordinateUtils.cpp
     # src/ErrorGraphVisualizer.cpp
     
     # Utils (add as you create them)

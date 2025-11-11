@@ -142,6 +142,30 @@ Main/fast:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Main.dir/build.make CMakeFiles/Main.dir/build
 .PHONY : Main/fast
 
+src/CoordinateUtils.o: src/CoordinateUtils.cpp.o
+.PHONY : src/CoordinateUtils.o
+
+# target to build an object file
+src/CoordinateUtils.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o
+.PHONY : src/CoordinateUtils.cpp.o
+
+src/CoordinateUtils.i: src/CoordinateUtils.cpp.i
+.PHONY : src/CoordinateUtils.i
+
+# target to preprocess a source file
+src/CoordinateUtils.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.i
+.PHONY : src/CoordinateUtils.cpp.i
+
+src/CoordinateUtils.s: src/CoordinateUtils.cpp.s
+.PHONY : src/CoordinateUtils.s
+
+# target to generate assembly for a file
+src/CoordinateUtils.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.s
+.PHONY : src/CoordinateUtils.cpp.s
+
 src/DroneSimulation.o: src/DroneSimulation.cpp.o
 .PHONY : src/DroneSimulation.o
 
@@ -165,6 +189,30 @@ src/DroneSimulation.s: src/DroneSimulation.cpp.s
 src/DroneSimulation.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.s
 .PHONY : src/DroneSimulation.cpp.s
+
+src/FlightSimulation.o: src/FlightSimulation.cpp.o
+.PHONY : src/FlightSimulation.o
+
+# target to build an object file
+src/FlightSimulation.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o
+.PHONY : src/FlightSimulation.cpp.o
+
+src/FlightSimulation.i: src/FlightSimulation.cpp.i
+.PHONY : src/FlightSimulation.i
+
+# target to preprocess a source file
+src/FlightSimulation.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.i
+.PHONY : src/FlightSimulation.cpp.i
+
+src/FlightSimulation.s: src/FlightSimulation.cpp.s
+.PHONY : src/FlightSimulation.s
+
+# target to generate assembly for a file
+src/FlightSimulation.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.s
+.PHONY : src/FlightSimulation.cpp.s
 
 src/HybridEstimator.o: src/HybridEstimator.cpp.o
 .PHONY : src/HybridEstimator.o
@@ -310,30 +358,6 @@ src/SmoothedEstimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.s
 .PHONY : src/SmoothedEstimator.cpp.s
 
-src/TemplateMatching.o: src/TemplateMatching.cpp.o
-.PHONY : src/TemplateMatching.o
-
-# target to build an object file
-src/TemplateMatching.cpp.o:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o
-.PHONY : src/TemplateMatching.cpp.o
-
-src/TemplateMatching.i: src/TemplateMatching.cpp.i
-.PHONY : src/TemplateMatching.i
-
-# target to preprocess a source file
-src/TemplateMatching.cpp.i:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.i
-.PHONY : src/TemplateMatching.cpp.i
-
-src/TemplateMatching.s: src/TemplateMatching.cpp.s
-.PHONY : src/TemplateMatching.s
-
-# target to generate assembly for a file
-src/TemplateMatching.cpp.s:
-	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.s
-.PHONY : src/TemplateMatching.cpp.s
-
 src/TemplateMatchingEstimator.o: src/TemplateMatchingEstimator.cpp.o
 .PHONY : src/TemplateMatchingEstimator.o
 
@@ -392,9 +416,15 @@ help:
 	@echo "... rebuild_cache"
 	@echo "... DroneNavigation"
 	@echo "... Main"
+	@echo "... src/CoordinateUtils.o"
+	@echo "... src/CoordinateUtils.i"
+	@echo "... src/CoordinateUtils.s"
 	@echo "... src/DroneSimulation.o"
 	@echo "... src/DroneSimulation.i"
 	@echo "... src/DroneSimulation.s"
+	@echo "... src/FlightSimulation.o"
+	@echo "... src/FlightSimulation.i"
+	@echo "... src/FlightSimulation.s"
 	@echo "... src/HybridEstimator.o"
 	@echo "... src/HybridEstimator.i"
 	@echo "... src/HybridEstimator.s"
@@ -413,9 +443,6 @@ help:
 	@echo "... src/SmoothedEstimator.o"
 	@echo "... src/SmoothedEstimator.i"
 	@echo "... src/SmoothedEstimator.s"
-	@echo "... src/TemplateMatching.o"
-	@echo "... src/TemplateMatching.i"
-	@echo "... src/TemplateMatching.s"
 	@echo "... src/TemplateMatchingEstimator.o"
 	@echo "... src/TemplateMatchingEstimator.i"
 	@echo "... src/TemplateMatchingEstimator.s"

@@ -57,9 +57,3 @@ class DroneSimulation
         void setHeading(double new_heading) { heading = new_heading; }
         
 };
-
-struct CoordinateHash {
-    std::size_t operator()(const std::pair<double, double>& coord) const {
-        return std::hash<double>()(coord.first) ^ (std::hash<double>()(coord.second) << 1);
-    }
-};

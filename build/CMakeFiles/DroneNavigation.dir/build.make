@@ -83,19 +83,19 @@ CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.s"
 	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/DroneSimulation.cpp -o CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.s
 
-CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
-CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o: ../src/TemplateMatching.cpp
-CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o: CMakeFiles/DroneNavigation.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o -MF CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o.d -o CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp
+CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
+CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o: ../src/FlightSimulation.cpp
+CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o: CMakeFiles/DroneNavigation.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o -MF CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o.d -o CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/FlightSimulation.cpp
 
-CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.i: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.i"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp > CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.i
+CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.i"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/FlightSimulation.cpp > CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.i
 
-CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.s: cmake_force
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.s"
-	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/TemplateMatching.cpp -o CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.s
+CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.s"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/FlightSimulation.cpp -o CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.s
 
 CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
 CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o: ../src/ORBFeatureEstimator.cpp
@@ -195,23 +195,38 @@ CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.s"
 	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/Visualization.cpp -o CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.s
 
+CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
+CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o: ../src/CoordinateUtils.cpp
+CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o: CMakeFiles/DroneNavigation.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Building CXX object CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o -MF CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o.d -o CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/CoordinateUtils.cpp
+
+CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.i"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/CoordinateUtils.cpp > CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.i
+
+CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.s"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/CoordinateUtils.cpp -o CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.s
+
 # Object files for target DroneNavigation
 DroneNavigation_OBJECTS = \
 "CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.o" \
-"CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o" \
+"CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/SURFFeatureEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.o" \
-"CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o"
+"CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o" \
+"CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o"
 
 # External object files for target DroneNavigation
 DroneNavigation_EXTERNAL_OBJECTS =
 
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.o
-libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/TemplateMatching.cpp.o
+libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/SURFFeatureEstimator.cpp.o
@@ -219,9 +234,10 @@ libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimat
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o
+libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/build.make
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Linking CXX static library libDroneNavigation.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_11) "Linking CXX static library libDroneNavigation.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/DroneNavigation.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/DroneNavigation.dir/link.txt --verbose=$(VERBOSE)
 
