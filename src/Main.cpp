@@ -197,7 +197,7 @@ int main(int argc, char** argv)
         std::cerr << "Failed to fetch clean map\n";
         return 1;
     }
-    cv::imwrite("map_clean.png", clean_map);
+    cv::imwrite("Images/map_clean.png", clean_map);
 
     char url[2048];
     std::snprintf(url, sizeof(url),
@@ -247,7 +247,7 @@ int main(int argc, char** argv)
         std::cerr << "Failed to fetch marked map\n";
         return 1;
     }
-    cv::imwrite("map_marked.png", marked_map);
+    cv::imwrite("Images/map_marked.png", marked_map);
 
     double pixels_per_100m = 100.0 / mpp;
     int crop_size = static_cast<int>(std::round(pixels_per_100m));
@@ -397,7 +397,7 @@ int main(int argc, char** argv)
     if (zigzag_map.empty()) {
         std::cerr << "Failed to fetch zigzag path map\n";
     } else {
-        cv::imwrite("map_zigzag.png", zigzag_map);
+        cv::imwrite("Images/map_zigzag.png", zigzag_map);
         
         cv::namedWindow("Map with Zigzag Path", cv::WINDOW_NORMAL);
         cv::imshow("Map with Zigzag Path", zigzag_map);

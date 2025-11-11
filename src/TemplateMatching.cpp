@@ -228,8 +228,8 @@ void runDroneSimulation(
     
     // Create CSV file for telemetry
     std::string telemetry_filename = is_waypoint_mode ? 
-        "drone_telemetry_" + algorithm_name + "_waypoints.csv" :
-        "drone_telemetry_" + algorithm_name + ".csv";
+        "CSV Files/drone_telemetry_" + algorithm_name + "_waypoints.csv" :
+        "CSV Files/drone_telemetry_" + algorithm_name + ".csv";
     std::ofstream telemetry_file(telemetry_filename);
     telemetry_file << "Step,Actual_Lat,Actual_Lng,Estimated_Lat,Estimated_Lng,Match_Confidence,Lat_Error_M,Lng_Error_M,Error_M,Algorithm\n";
     
@@ -496,8 +496,8 @@ void runDroneSimulation(
     cv::waitKey(1);
     
     std::string graph_filename = is_waypoint_mode ?
-        "error_graph_" + algorithm_name + "_waypoints.png" :
-        "error_graph_" + algorithm_name + ".png";
+        "Images/error_graph_" + algorithm_name + "_waypoints.png" :
+        "Images/error_graph_" + algorithm_name + ".png";
     
     if (cv::imwrite(graph_filename, error_graph)) {
         std::cout << "Error graph saved to " << graph_filename << std::endl;
