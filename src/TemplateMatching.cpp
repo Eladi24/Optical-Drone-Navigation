@@ -46,7 +46,7 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
 // Keep matchCropsOnMap as is (helper function for testing)
 void matchCropsOnMap(
     const cv::Mat &clean_map,
-    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash> &crops)
+    const std::vector<ReferenceCrop> &crops)
 {
     // Create a copy of the clean map to draw matches on
     cv::Mat display_map = clean_map.clone();
@@ -55,10 +55,10 @@ void matchCropsOnMap(
     std::vector<std::tuple<std::pair<double, double>, cv::Point, double>> matches;
 
     // Iterate through each crop in the unordered_map
-    for (const auto &crop_pair : crops)
+    for (const auto &crop : crops)
     {
-        const auto &coordinates = crop_pair.first;
-        const cv::Mat &cropped_img = crop_pair.second;
+        const auto &coordinates = crop.coordinates;
+        const cv::Mat &cropped_img = crop.image;
 
         // Get dimensions of the crop
         int width = cropped_img.cols;
@@ -121,9 +121,9 @@ void matchCropsOnMap(
         cv::Mat grid(total_height, total_width, CV_8UC3, cv::Scalar(255, 255, 255));
 
         int i = 0;
-        for (const auto &crop_pair : crops)
+        for (const auto &crop : crops)
         {
-            const cv::Mat &cropped_img = crop_pair.second;
+            const cv::Mat &cropped_img = crop.image;
             int row = i / grid_size;
             int col = i % grid_size;
 
@@ -173,7 +173,7 @@ void matchCropsOnMap(
 // REFACTORED: Consolidated drone simulation function
 void runDroneSimulation(
     const cv::Mat &clean_map,
-    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash> &reference_crops,
+    const std::vector<ReferenceCrop> &reference_crops,
     const std::vector<std::pair<double, double>> &waypoints,
     double meters_per_degree_lat, double meters_per_degree_lng,
     double center_lat, double center_lng,
@@ -221,12 +221,6 @@ void runDroneSimulation(
     cv::namedWindow("Drone View", cv::WINDOW_NORMAL);
     cv::namedWindow("Telemetry Data", cv::WINDOW_NORMAL);
     cv::resizeWindow("Drone Simulation", 1200, 800);
-
-    // Extract reference crop coordinates
-    std::vector<std::pair<double, double>> ref_crop_coords;
-    for (const auto &crop_pair : reference_crops) {
-        ref_crop_coords.push_back(crop_pair.first);
-    }
 
     // Storage for results and telemetry
     std::vector<std::pair<double, double>> algorithm_positions;
@@ -300,7 +294,7 @@ void runDroneSimulation(
             drone.getPosition() : algorithm_positions.back();
         
         PositionEstimate estimate = estimator->estimatePosition(
-            drone_view, ref_crop_coords, reference_crops, last_position);
+            drone_view, reference_crops, last_position);
         
         std::pair<double, double> estimated_position = estimate.position;
         double match_confidence = estimate.confidence;

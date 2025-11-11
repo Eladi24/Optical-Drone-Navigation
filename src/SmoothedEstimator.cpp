@@ -8,11 +8,10 @@ SmoothedEstimator::SmoothedEstimator(int top_matches)
 
 PositionEstimate SmoothedEstimator::estimatePosition(
     const cv::Mat& drone_view,
-    const std::vector<std::pair<double, double>>& ref_crop_coords,
-    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash>& reference_crops,
+    const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>& last_position)
 {
-    if (drone_view.empty() || ref_crop_coords.empty()) {
+    if (drone_view.empty() || reference_crops.empty()) {
         return PositionEstimate(last_position, 0.0, -1);
     }
 
@@ -20,26 +19,19 @@ PositionEstimate SmoothedEstimator::estimatePosition(
     std::vector<std::tuple<int, double, std::pair<double, double>>> all_matches;
 
     // Calculate match score for each reference crop
-    for (size_t idx = 0; idx < ref_crop_coords.size(); idx++) {
-        const auto& coords = ref_crop_coords[idx];
+    for (size_t idx = 0; idx < reference_crops.size(); idx++) {
+        const auto& crop = reference_crops[idx];
         
-        auto it = reference_crops.find(coords);
-        if (it == reference_crops.end()) {
-            continue;
-        }
-        
-        const cv::Mat& ref_crop = it->second;
-        
-        if (ref_crop.empty()) {
+        if (crop.image.empty()) {
             continue;
         }
 
         // Ensure comparable sizes
         cv::Mat comparison_image;
-        if (drone_view.size() != ref_crop.size()) {
-            cv::resize(ref_crop, comparison_image, drone_view.size());
+        if (drone_view.size() != crop.image.size()) {
+            cv::resize(crop.image, comparison_image, drone_view.size());
         } else {
-            comparison_image = ref_crop;
+            comparison_image = crop.image;
         }
 
         // Calculate match score using template matching
@@ -49,7 +41,7 @@ PositionEstimate SmoothedEstimator::estimatePosition(
         double score;
         cv::minMaxLoc(result, nullptr, &score);
         
-        all_matches.push_back(std::make_tuple(static_cast<int>(idx), score, coords));
+        all_matches.push_back(std::make_tuple(static_cast<int>(idx), score, crop.coordinates));
     }
 
     // Sort by score in descending order

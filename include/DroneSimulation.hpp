@@ -2,6 +2,14 @@
 #include <opencv2/opencv.hpp>
 #include <random>
 
+struct ReferenceCrop {
+    std::pair<double, double> coordinates;
+    cv::Mat image;
+    
+    ReferenceCrop(std::pair<double, double> coords, cv::Mat img)
+        : coordinates(coords), image(img) {}
+};
+
 class DroneSimulation
 {
     private:

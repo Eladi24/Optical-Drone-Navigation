@@ -8,21 +8,20 @@ HybridEstimator::HybridEstimator()
 
 PositionEstimate HybridEstimator::estimatePosition(
     const cv::Mat& drone_view,
-    const std::vector<std::pair<double, double>>& ref_crop_coords,
-    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash>& reference_crops,
+    const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>& last_position)
 {
-    if (drone_view.empty() || ref_crop_coords.empty()) {
+    if (drone_view.empty() || reference_crops.empty()) {
         return PositionEstimate(last_position, 0.0, -1);
     }
 
     // Get position estimate using template matching
     PositionEstimate template_result = template_estimator_.estimatePosition(
-        drone_view, ref_crop_coords, reference_crops, last_position);
+        drone_view, reference_crops, last_position);
 
     // Get position estimate using feature matching
     PositionEstimate orb_result = orb_estimator_.estimatePosition(
-        drone_view, ref_crop_coords, reference_crops, last_position);
+        drone_view, reference_crops, last_position);
 
     // Decision logic - prioritize methods based on confidence and agreement
     

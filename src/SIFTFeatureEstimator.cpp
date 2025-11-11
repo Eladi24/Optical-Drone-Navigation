@@ -10,11 +10,10 @@ SIFTFeatureEstimator::SIFTFeatureEstimator(int num_features, int num_octave_laye
 
 PositionEstimate SIFTFeatureEstimator::estimatePosition(
     const cv::Mat& drone_view,
-    const std::vector<std::pair<double, double>>& ref_crop_coords,
-    const std::unordered_map<std::pair<double, double>, cv::Mat, CoordinateHash>& reference_crops,
+    const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>& last_position)
 {
-    if (drone_view.empty() || ref_crop_coords.empty()) {
+    if (drone_view.empty() || reference_crops.empty()) {
         return PositionEstimate(last_position, 0.0, -1);
     }
 
@@ -32,24 +31,17 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
     std::vector<std::pair<int, float>> match_scores;
     cv::BFMatcher matcher(cv::NORM_L2);  // SIFT uses L2 norm (not Hamming)
 
-    for (size_t idx = 0; idx < ref_crop_coords.size(); idx++) {
-        const auto& coords = ref_crop_coords[idx];
+    for (size_t idx = 0; idx < reference_crops.size(); idx++) {
+        const auto& crop = reference_crops[idx];
         
-        auto it = reference_crops.find(coords);
-        if (it == reference_crops.end()) {
-            continue;
-        }
-        
-        const cv::Mat& ref_crop = it->second;
-        
-        if (ref_crop.empty()) {
+        if (crop.image.empty()) {
             continue;
         }
 
         // Extract features from reference crop
         std::vector<cv::KeyPoint> keypoints_ref;
         cv::Mat descriptors_ref;
-        sift_detector_->detectAndCompute(ref_crop, cv::noArray(), keypoints_ref, descriptors_ref);
+        sift_detector_->detectAndCompute(crop.image, cv::noArray(), keypoints_ref, descriptors_ref);
 
         if (keypoints_ref.size() < 10 || descriptors_ref.empty()) {
             continue;
@@ -101,7 +93,7 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
     }
 
     int best_idx = match_scores[0].first;
-    std::pair<double, double> best_position = ref_crop_coords[best_idx];
+    std::pair<double, double> best_position = reference_crops[best_idx].coordinates;
     
     // Normalize confidence to [0, 1] range
     // SIFT scores typically higher than ORB

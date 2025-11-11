@@ -43,3 +43,7 @@
 # Ignore the actual config file with API key
 config.ini
 
+# Ignore the csv and png files generated during drone flights
+*.csv
+*.png
+
