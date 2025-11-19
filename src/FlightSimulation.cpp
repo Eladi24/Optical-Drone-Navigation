@@ -262,10 +262,9 @@ void runDroneSimulation(
             double target_lat = waypoints[current_waypoint].first;
             double target_lng = waypoints[current_waypoint].second;
             
-            double dist_to_waypoint_lat = (target_lat - drone.getPosition().first) * meters_per_degree_lat;
-            double dist_to_waypoint_lng = (target_lng - drone.getPosition().second) * meters_per_degree_lng;
-            double dist_to_waypoint = std::sqrt(dist_to_waypoint_lat * dist_to_waypoint_lat + 
-                                              dist_to_waypoint_lng * dist_to_waypoint_lng);
+            double dist_to_waypoint = CoordinateUtils::calculateDistance(
+                drone.getPosition(), {target_lat, target_lng},
+                meters_per_degree_lat, meters_per_degree_lng);
             
             if (dist_to_waypoint < 10.0) {
                 current_waypoint++;
@@ -273,12 +272,9 @@ void runDroneSimulation(
                 if (current_waypoint < waypoints.size()) {
                     double next_lat = waypoints[current_waypoint].first;
                     double next_lng = waypoints[current_waypoint].second;
-                    double delta_lng = next_lng - drone.getPosition().second;
-                    double delta_lat = next_lat - drone.getPosition().first;
-                    double new_heading = std::atan2(delta_lng * meters_per_degree_lng,
-                                                delta_lat * meters_per_degree_lat) * 180.0 / M_PI;
-                    if (new_heading < 0)
-                        new_heading += 360.0;
+                    double new_heading = CoordinateUtils::calculateHeading(
+    drone.getPosition(), {next_lat, next_lng},
+    meters_per_degree_lat, meters_per_degree_lng);
                     
                     drone.setHeading(new_heading);
                     std::cout << "Reached waypoint " << current_waypoint - 1 

@@ -242,8 +242,13 @@ int main(int argc, char** argv)
         return 1;
     }
     
-    const double lat = 31.7767;
-    const double lng = 35.2345;
+    // ==================== JERUSALEM SIMULATION ====================
+    std::cout << "\n" << std::string(80, '=') << std::endl;
+    std::cout << "🚁 JERUSALEM SIMULATION" << std::endl;
+    std::cout << std::string(80, '=') << std::endl;
+    
+    const double lat_jer = 31.7767;
+    const double lng_jer = 35.2345;
     const int width = 640;
     const int height = 640;
     const int scale = 2;
@@ -251,230 +256,228 @@ int main(int argc, char** argv)
 
     const double target_span_m = 1000.0;
     const int effective_px = width * scale;
-    int zoom = chooseZoomForSpan(lat, target_span_m, effective_px);
+    int zoom_jer = chooseZoomForSpan(lat_jer, target_span_m, effective_px);
 
-    const double lat_radians = lat * M_PI / 180.0;
-    const double meters_per_degree_lat = 111320.0;
-    const double meters_per_degree_lng = 111320.0 * std::cos(lat_radians);
+    const double lat_radians_jer = lat_jer * M_PI / 180.0;
+    const double meters_per_degree_lat_jer = 111320.0;
+    const double meters_per_degree_lng_jer = 111320.0 * std::cos(lat_radians_jer);
 
-    const double lat_offset_start = -250.0 / meters_per_degree_lat;
-    const double lng_offset_start = -250.0 / meters_per_degree_lng;
+    const double lat_offset_start_jer = -250.0 / meters_per_degree_lat_jer;
+    const double lng_offset_start_jer = -250.0 / meters_per_degree_lng_jer;
 
     const double path_length_m = 350.0;
     const double diagonal_component_m = path_length_m / sqrt(2.0);
 
-    const double lat_offset_path = diagonal_component_m / meters_per_degree_lat;
-    const double lng_offset_path = diagonal_component_m / meters_per_degree_lng;
+    const double lat_offset_path_jer = diagonal_component_m / meters_per_degree_lat_jer;
+    const double lng_offset_path_jer = diagonal_component_m / meters_per_degree_lng_jer;
 
-    const double path_start_lat = lat + lat_offset_start + lat_offset_path;
-    const double path_start_lng = lng + lng_offset_start + lng_offset_path;
+    const double path_start_lat_jer = lat_jer + lat_offset_start_jer + lat_offset_path_jer;
+    const double path_start_lng_jer = lng_jer + lng_offset_start_jer + lng_offset_path_jer;
 
-    const double path_end_lat = path_start_lat + lat_offset_path;
-    const double path_end_lng = path_start_lng + lng_offset_path;
+    const double path_end_lat_jer = path_start_lat_jer + lat_offset_path_jer;
+    const double path_end_lng_jer = path_start_lng_jer + lng_offset_path_jer;
 
-    double mpp = metersPerPixel(lat, zoom);
-    double span_m = mpp * effective_px;
-    std::cerr << "Chosen zoom=" << zoom
-              << " → mpp=" << mpp
-              << " → width span ≈ " << span_m << " m\n";
+    double mpp_jer = metersPerPixel(lat_jer, zoom_jer);
+    double span_m_jer = mpp_jer * effective_px;
+    std::cout << "Jerusalem - Chosen zoom=" << zoom_jer
+              << " → mpp=" << mpp_jer
+              << " → width span ≈ " << span_m_jer << " m\n";
 
-    std::ostringstream clean_url_ss;
-    clean_url_ss << "https://maps.googleapis.com/maps/api/staticmap?"
-                 << "center=" << lat << "," << lng
-                 << "&zoom=" << zoom
-                 << "&size=" << width << "x" << height
-                 << "&maptype=" << maptype
-                 << "&scale=" << scale
-                 << "&key=" << apiKey;
+    std::ostringstream clean_url_ss_jer;
+    clean_url_ss_jer << "https://maps.googleapis.com/maps/api/staticmap?"
+                     << "center=" << lat_jer << "," << lng_jer
+                     << "&zoom=" << zoom_jer
+                     << "&size=" << width << "x" << height
+                     << "&maptype=" << maptype
+                     << "&scale=" << scale
+                     << "&key=" << apiKey;
 
-    cv::Mat clean_map = fetchMapImage(clean_url_ss.str());
-    if (clean_map.empty())
+    cv::Mat clean_map_jer = fetchMapImage(clean_url_ss_jer.str());
+    if (clean_map_jer.empty())
     {
-        std::cerr << "Failed to fetch clean map\n";
+        std::cerr << "Failed to fetch Jerusalem clean map\n";
         return 1;
     }
-    cv::imwrite("Images/map_clean.png", clean_map);
+    cv::imwrite("Images/map_clean_jerusalem.png", clean_map_jer);
 
-    char url[2048];
-    std::snprintf(url, sizeof(url),
-                  "https://maps.googleapis.com/maps/api/staticmap?"
-                  "center=%f,%f&zoom=%d&size=%dx%d&maptype=%s&scale=%d"
-                  "&path=color:0x0000FF|weight:5|%f,%f|%f,%f"
-                  "&markers=color:red|label:S|%f,%f"
-                  "&markers=color:green|label:E|%f,%f"
-                  "&key=%s",
-                  lat, lng, zoom, width, height, maptype.c_str(), scale,
-                  path_start_lat, path_start_lng, path_end_lat, path_end_lng,
-                  path_start_lat, path_start_lng,
-                  path_end_lat, path_end_lng,
-                  apiKey.c_str());
+    double pixels_per_100m_jer = 100.0 / mpp_jer;
+    int crop_size_jer = static_cast<int>(std::round(pixels_per_100m_jer));
+    int center_x_jer = (width * scale) / 2;
+    int center_y_jer = (height * scale) / 2;
 
-    std::vector<std::pair<double, double>> sample_points;
-    for (int i = 0; i < 10; i++)
-    {
-        double t = i / 9.0;
-        double point_lat = path_start_lat + t * (path_end_lat - path_start_lat);
-        double point_lng = path_start_lng + t * (path_end_lng - path_start_lng);
-        sample_points.push_back(std::make_pair(point_lat, point_lng));
-    }
-
-    std::ostringstream marked_url_ss;
-    marked_url_ss << "https://maps.googleapis.com/maps/api/staticmap?"
-                  << "center=" << lat << "," << lng
-                  << "&zoom=" << zoom
-                  << "&size=" << width << "x" << height
-                  << "&maptype=" << maptype
-                  << "&scale=" << scale
-                  << "&path=color:0x0000FF|weight:5|" << path_start_lat << "," << path_start_lng
-                  << "|" << path_end_lat << "," << path_end_lng
-                  << "&markers=color:red|label:S|" << path_start_lat << "," << path_start_lng
-                  << "&markers=color:green|label:E|" << path_end_lat << "," << path_end_lng;
-
-    marked_url_ss << "&markers=color:yellow|size:small";
-    for (const auto &point : sample_points)
-    {
-        marked_url_ss << "|" << point.first << "," << point.second;
-    }
-    marked_url_ss << "&key=" << apiKey;
-
-    cv::Mat marked_map = fetchMapImage(marked_url_ss.str());
-    if (marked_map.empty())
-    {
-        std::cerr << "Failed to fetch marked map\n";
-        return 1;
-    }
-    cv::imwrite("Images/map_marked.png", marked_map);
-
-    double pixels_per_100m = 100.0 / mpp;
-    int crop_size = static_cast<int>(std::round(pixels_per_100m));
-
-    std::vector<ReferenceCrop> crops;
-
-    int center_x = (width * scale) / 2;
-    int center_y = (height * scale) / 2;
-
-    for (int i = 0; i < sample_points.size(); i++)
-    {
-        const auto &point = sample_points[i];
-
-        cv::Point pt = CoordinateUtils::latLngToPixel(
-            point.first, point.second,
-            lat, lng, center_x, center_y, mpp,
-            meters_per_degree_lat, meters_per_degree_lng);
-
-        cv::Rect crop_rect(
-            pt.x - crop_size / 2,
-            pt.y - crop_size / 2,
-            crop_size,
-            crop_size);
-
-        crop_rect = crop_rect & cv::Rect(0, 0, clean_map.cols, clean_map.rows);
-
-        if (crop_rect.width > 0 && crop_rect.height > 0)
-        {
-            cv::Mat cropped = clean_map(crop_rect).clone();
-            crops.push_back({point, cropped});
-        }
-    }
-
-    cv::namedWindow("Map with Path and Markers", cv::WINDOW_NORMAL);
-    cv::imshow("Map with Path and Markers", marked_map);
-
-    int i = 0;
-    for (const auto &crop : crops)
-    {
-        std::ostringstream window_name;
-        window_name << "Crop " << i << " - Coordinates: "
-                    << std::fixed << std::setprecision(6)
-                    << crop.coordinates.first << ", " << crop.coordinates.second;
-
-        cv::namedWindow(window_name.str(), cv::WINDOW_AUTOSIZE);
-        cv::imshow(window_name.str(), crop.image);
-        i++;
-    }
-
-    std::cout << "Displaying " << crops.size() << " crops from the path" << std::endl;
-    std::cout << "Press any key to close all windows" << std::endl;
-
-    cv::waitKey(0);
-    cv::destroyAllWindows();
-
-    matchCropsOnMap(clean_map, crops);
-
-    std::cout << "\nStarting drone flight simulation..." << std::endl;
-    std::vector<std::pair<double, double>> waypoints = {
-        {path_start_lat, path_start_lng},
-        {path_end_lat, path_end_lng}
-    };
-    runDroneSimulation(
-        clean_map, crops,
-        waypoints,
-        meters_per_degree_lat, meters_per_degree_lng,
-        lat, lng,
-        (width * scale) / 2, (height * scale) / 2,
-        mpp,
-        algorithm
-    );
-    
-    // Diagonal Path
-    PathConfig diagonal_path;
-    diagonal_path.name = "diagonal";
-    diagonal_path.color = "0x0000FF";
-    diagonal_path.start_marker_color = "red";
-    diagonal_path.end_marker_color = "green";
-    diagonal_path.waypoints = {{path_start_lat, path_start_lng}, {path_end_lat, path_end_lng}};
+    // Diagonal Path - Jerusalem
+    PathConfig diagonal_path_jer;
+    diagonal_path_jer.name = "diagonal_jerusalem";
+    diagonal_path_jer.color = "0x0000FF";
+    diagonal_path_jer.start_marker_color = "red";
+    diagonal_path_jer.end_marker_color = "green";
+    diagonal_path_jer.waypoints = {{path_start_lat_jer, path_start_lng_jer}, {path_end_lat_jer, path_end_lng_jer}};
     
     for (int i = 0; i < 10; i++) {
         double t = i / 9.0;
-        diagonal_path.sample_points.push_back({
-            path_start_lat + t * (path_end_lat - path_start_lat),
-            path_start_lng + t * (path_end_lng - path_start_lng)
+        diagonal_path_jer.sample_points.push_back({
+            path_start_lat_jer + t * (path_end_lat_jer - path_start_lat_jer),
+            path_start_lng_jer + t * (path_end_lng_jer - path_start_lng_jer)
         });
     }
     
-    processAndSimulatePath(diagonal_path, clean_map, apiKey, lat, lng, zoom, 
-                          width, height, scale, maptype, center_x, center_y, 
-                          mpp, crop_size, meters_per_degree_lat, 
-                          meters_per_degree_lng, algorithm);
+    processAndSimulatePath(diagonal_path_jer, clean_map_jer, apiKey, lat_jer, lng_jer, zoom_jer, 
+                          width, height, scale, maptype, center_x_jer, center_y_jer, 
+                          mpp_jer, crop_size_jer, meters_per_degree_lat_jer, 
+                          meters_per_degree_lng_jer, algorithm);
     
-    // Zigzag Path
-    PathConfig zigzag_path;
-    zigzag_path.name = "zigzag";
-    zigzag_path.color = "0xFF0000";
-    zigzag_path.start_marker_color = "blue";
-    zigzag_path.end_marker_color = "purple";
+    // Zigzag Path - Jerusalem
+    PathConfig zigzag_path_jer;
+    zigzag_path_jer.name = "zigzag_jerusalem";
+    zigzag_path_jer.color = "0xFF0000";
+    zigzag_path_jer.start_marker_color = "blue";
+    zigzag_path_jer.end_marker_color = "purple";
     
-    // Build zigzag waypoints
-    double step_size = lat_offset_path / 4.0;
-    zigzag_path.waypoints = {
-        {path_start_lat, path_start_lng},
-        {path_start_lat + step_size, path_start_lng + step_size},
-        {path_start_lat + 2 * step_size, path_start_lng},
-        {path_start_lat + 3 * step_size, path_start_lng + step_size},
-        {path_start_lat + 4 * step_size, path_start_lng},
-        {path_end_lat, path_start_lng + 0.5 * step_size}
+    double step_size_jer = lat_offset_path_jer / 4.0;
+    zigzag_path_jer.waypoints = {
+        {path_start_lat_jer, path_start_lng_jer},
+        {path_start_lat_jer + step_size_jer, path_start_lng_jer + step_size_jer},
+        {path_start_lat_jer + 2 * step_size_jer, path_start_lng_jer},
+        {path_start_lat_jer + 3 * step_size_jer, path_start_lng_jer + step_size_jer},
+        {path_start_lat_jer + 4 * step_size_jer, path_start_lng_jer},
+        {path_end_lat_jer, path_start_lng_jer + 0.5 * step_size_jer}
     };
     
-    // Generate zigzag samples
-    for (size_t i = 0; i < zigzag_path.waypoints.size() - 1; i++) {
-        const auto& start = zigzag_path.waypoints[i];
-        const auto& end = zigzag_path.waypoints[i+1];
-        int points_per_segment = (i < zigzag_path.waypoints.size() - 2) ? 2 : 3;
+    for (size_t i = 0; i < zigzag_path_jer.waypoints.size() - 1; i++) {
+        const auto& start = zigzag_path_jer.waypoints[i];
+        const auto& end = zigzag_path_jer.waypoints[i+1];
+        int points_per_segment = (i < zigzag_path_jer.waypoints.size() - 2) ? 2 : 3;
         
         for (int j = 0; j < points_per_segment; j++) {
             double t = j / static_cast<double>(points_per_segment);
-            zigzag_path.sample_points.push_back({
+            zigzag_path_jer.sample_points.push_back({
                 start.first + t * (end.first - start.first),
                 start.second + t * (end.second - start.second)
             });
         }
     }
-    zigzag_path.sample_points.push_back(zigzag_path.waypoints.back());
+    zigzag_path_jer.sample_points.push_back(zigzag_path_jer.waypoints.back());
     
-    processAndSimulatePath(zigzag_path, clean_map, apiKey, lat, lng, zoom,
-                          width, height, scale, maptype, center_x, center_y,
-                          mpp, crop_size, meters_per_degree_lat,
-                          meters_per_degree_lng, algorithm);
+    processAndSimulatePath(zigzag_path_jer, clean_map_jer, apiKey, lat_jer, lng_jer, zoom_jer,
+                          width, height, scale, maptype, center_x_jer, center_y_jer,
+                          mpp_jer, crop_size_jer, meters_per_degree_lat_jer,
+                          meters_per_degree_lng_jer, algorithm);
+
+    // ==================== MANHATTAN SIMULATION ====================
+    std::cout << "\n" << std::string(80, '=') << std::endl;
+    std::cout << "🗽 MANHATTAN SIMULATION" << std::endl;
+    std::cout << std::string(80, '=') << std::endl;
     
+    const double lat_nyc = 40.7580;  // Central Park area
+    const double lng_nyc = -73.9855;
+
+    int zoom_nyc = chooseZoomForSpan(lat_nyc, target_span_m, effective_px);
+
+    const double lat_radians_nyc = lat_nyc * M_PI / 180.0;
+    const double meters_per_degree_lat_nyc = 111320.0;
+    const double meters_per_degree_lng_nyc = 111320.0 * std::cos(lat_radians_nyc);
+
+    const double lat_offset_start_nyc = -250.0 / meters_per_degree_lat_nyc;
+    const double lng_offset_start_nyc = -250.0 / meters_per_degree_lng_nyc;
+
+    const double lat_offset_path_nyc = diagonal_component_m / meters_per_degree_lat_nyc;
+    const double lng_offset_path_nyc = diagonal_component_m / meters_per_degree_lng_nyc;
+
+    const double path_start_lat_nyc = lat_nyc + lat_offset_start_nyc + lat_offset_path_nyc;
+    const double path_start_lng_nyc = lng_nyc + lng_offset_start_nyc + lng_offset_path_nyc;
+
+    const double path_end_lat_nyc = path_start_lat_nyc + lat_offset_path_nyc;
+    const double path_end_lng_nyc = path_start_lng_nyc + lng_offset_path_nyc;
+
+    double mpp_nyc = metersPerPixel(lat_nyc, zoom_nyc);
+    double span_m_nyc = mpp_nyc * effective_px;
+    std::cout << "Manhattan - Chosen zoom=" << zoom_nyc
+              << " → mpp=" << mpp_nyc
+              << " → width span ≈ " << span_m_nyc << " m\n";
+
+    std::ostringstream clean_url_ss_nyc;
+    clean_url_ss_nyc << "https://maps.googleapis.com/maps/api/staticmap?"
+                     << "center=" << lat_nyc << "," << lng_nyc
+                     << "&zoom=" << zoom_nyc
+                     << "&size=" << width << "x" << height
+                     << "&maptype=" << maptype
+                     << "&scale=" << scale
+                     << "&key=" << apiKey;
+
+    cv::Mat clean_map_nyc = fetchMapImage(clean_url_ss_nyc.str());
+    if (clean_map_nyc.empty())
+    {
+        std::cerr << "Failed to fetch Manhattan clean map\n";
+        return 1;
+    }
+    cv::imwrite("Images/map_clean_manhattan.png", clean_map_nyc);
+
+    double pixels_per_100m_nyc = 100.0 / mpp_nyc;
+    int crop_size_nyc = static_cast<int>(std::round(pixels_per_100m_nyc));
+    int center_x_nyc = (width * scale) / 2;
+    int center_y_nyc = (height * scale) / 2;
+
+    // Diagonal Path - Manhattan
+    PathConfig diagonal_path_nyc;
+    diagonal_path_nyc.name = "diagonal_manhattan";
+    diagonal_path_nyc.color = "0x0000FF";
+    diagonal_path_nyc.start_marker_color = "red";
+    diagonal_path_nyc.end_marker_color = "green";
+    diagonal_path_nyc.waypoints = {{path_start_lat_nyc, path_start_lng_nyc}, {path_end_lat_nyc, path_end_lng_nyc}};
+    
+    for (int i = 0; i < 10; i++) {
+        double t = i / 9.0;
+        diagonal_path_nyc.sample_points.push_back({
+            path_start_lat_nyc + t * (path_end_lat_nyc - path_start_lat_nyc),
+            path_start_lng_nyc + t * (path_end_lng_nyc - path_start_lng_nyc)
+        });
+    }
+    
+    processAndSimulatePath(diagonal_path_nyc, clean_map_nyc, apiKey, lat_nyc, lng_nyc, zoom_nyc, 
+                          width, height, scale, maptype, center_x_nyc, center_y_nyc, 
+                          mpp_nyc, crop_size_nyc, meters_per_degree_lat_nyc, 
+                          meters_per_degree_lng_nyc, algorithm);
+    
+    // Zigzag Path - Manhattan
+    PathConfig zigzag_path_nyc;
+    zigzag_path_nyc.name = "zigzag_manhattan";
+    zigzag_path_nyc.color = "0xFF0000";
+    zigzag_path_nyc.start_marker_color = "blue";
+    zigzag_path_nyc.end_marker_color = "purple";
+    
+    double step_size_nyc = lat_offset_path_nyc / 4.0;
+    zigzag_path_nyc.waypoints = {
+        {path_start_lat_nyc, path_start_lng_nyc},
+        {path_start_lat_nyc + step_size_nyc, path_start_lng_nyc + step_size_nyc},
+        {path_start_lat_nyc + 2 * step_size_nyc, path_start_lng_nyc},
+        {path_start_lat_nyc + 3 * step_size_nyc, path_start_lng_nyc + step_size_nyc},
+        {path_start_lat_nyc + 4 * step_size_nyc, path_start_lng_nyc},
+        {path_end_lat_nyc, path_start_lng_nyc + 0.5 * step_size_nyc}
+    };
+    
+    for (size_t i = 0; i < zigzag_path_nyc.waypoints.size() - 1; i++) {
+        const auto& start = zigzag_path_nyc.waypoints[i];
+        const auto& end = zigzag_path_nyc.waypoints[i+1];
+        int points_per_segment = (i < zigzag_path_nyc.waypoints.size() - 2) ? 2 : 3;
+        
+        for (int j = 0; j < points_per_segment; j++) {
+            double t = j / static_cast<double>(points_per_segment);
+            zigzag_path_nyc.sample_points.push_back({
+                start.first + t * (end.first - start.first),
+                start.second + t * (end.second - start.second)
+            });
+        }
+    }
+    zigzag_path_nyc.sample_points.push_back(zigzag_path_nyc.waypoints.back());
+    
+    processAndSimulatePath(zigzag_path_nyc, clean_map_nyc, apiKey, lat_nyc, lng_nyc, zoom_nyc,
+                          width, height, scale, maptype, center_x_nyc, center_y_nyc,
+                          mpp_nyc, crop_size_nyc, meters_per_degree_lat_nyc,
+                          meters_per_degree_lng_nyc, algorithm);
+
+    std::cout << "\n" << std::string(80, '=') << std::endl;
+    std::cout << "✅ ALL SIMULATIONS COMPLETE!" << std::endl;
+    std::cout << std::string(80, '=') << std::endl;
+
     return 0;
 }
