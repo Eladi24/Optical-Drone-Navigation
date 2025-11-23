@@ -210,10 +210,17 @@ void processAndSimulatePath(
     std::cout << "\nPerforming template matching for " << config.name << " path crops..." << std::endl;
     matchCropsOnMap(clean_map, crops);
     
+    // 🆕 Extract location and path type from config.name
+    // config.name format: "diagonal_manhattan" or "zigzag_jerusalem"
+    size_t underscore_pos = config.name.find('_');
+    std::string path_type = config.name.substr(0, underscore_pos);  // "diagonal" or "zigzag"
+    std::string location = config.name.substr(underscore_pos + 1);  // "manhattan" or "jerusalem"
+    
     std::cout << "\nStarting drone flight simulation for " << config.name << "..." << std::endl;
     runDroneSimulation(clean_map, crops, config.waypoints,
                       meters_per_degree_lat, meters_per_degree_lng,
-                      lat, lng, center_x, center_y, mpp, algorithm);
+                      lat, lng, center_x, center_y, mpp, algorithm,
+                      location, path_type);  // 🆕 PASS NEW PARAMETERS
 }
 
 int main(int argc, char** argv)

@@ -17,5 +17,7 @@ void runDroneSimulation(
     double center_lat, double center_lng,
     int center_x, int center_y,
     double mpp,
-    PositionAlgorithm algorithm);
+    PositionAlgorithm algorithm,
+    const std::string& location_name,
+    const std::string& path_type);
 

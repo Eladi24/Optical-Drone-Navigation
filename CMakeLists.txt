@@ -42,7 +42,7 @@ add_library(DroneNavigation
     # Visualization (add as you create them)
     src/Visualization.cpp
     src/CoordinateUtils.cpp
-    # src/ErrorGraphVisualizer.cpp
+    src/KalmanFilter.cpp
     
     # Utils (add as you create them)
     # src/CoordinateUtils.cpp

@@ -37,11 +37,8 @@ cv::Mat createSimulationVisualization(const SimulationState& state);
 cv::Mat createTelemetryVisualization(const TelemetryData& data, int current_step);
 
 cv::Mat createErrorGraph(
-    const std::vector<std::pair<double, double>>& actual_positions,
-    const std::vector<std::pair<double, double>>& estimated_positions,
-    double meters_per_degree_lat,
-    double meters_per_degree_lng,
-    const std::string& algorithm_name);
+    const std::vector<double>& error_values,  // Pre-calculated errors
+    const std::string &algorithm_name);
 
 // Helper to update all visualization windows at once
 void updateAllDisplays(

@@ -2,6 +2,7 @@
 #include "PositionEstimation.hpp"
 #include "TemplateMatchingEstimator.hpp"
 #include "ORBFeatureEstimator.hpp"
+#include "SIFTFeatureEstimator.hpp"
 
 class HybridEstimator : public IPositionEstimator {
 public:
@@ -18,4 +19,5 @@ public:
 private:
     TemplateMatchingEstimator template_estimator_;
     ORBFeatureEstimator orb_estimator_;
+    SIFTFeatureEstimator sift_estimator_;
 };

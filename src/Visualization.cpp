@@ -208,11 +208,31 @@ cv::Mat createErrorGraph(
     // Calculate errors for each position
     std::vector<double> errors;
     double max_error = 0.0;
-    
+
+    // 🆕 ADD SIZE VALIDATION
+    if (actual_positions.empty() || estimated_positions.empty()) {
+        std::cerr << "Error: No position data for graph generation" << std::endl;
+        return graph;
+    }
+
+    if (actual_positions.size() != estimated_positions.size()) {
+        std::cerr << "Warning: Mismatch in position array sizes: " 
+                  << actual_positions.size() << " vs " << estimated_positions.size() << std::endl;
+        // Use the smaller size
+        size_t min_size = std::min(actual_positions.size(), estimated_positions.size());
+    }
+
     for (size_t i = 0; i < actual_positions.size(); i++) {
         double lat_error = (actual_positions[i].first - estimated_positions[i].first) * meters_per_degree_lat;
         double lng_error = (actual_positions[i].second - estimated_positions[i].second) * meters_per_degree_lng;
         double error = std::sqrt(lat_error * lat_error + lng_error * lng_error);
+        
+        // 🆕 VALIDATE ERROR VALUE
+        if (std::isnan(error) || std::isinf(error)) {
+            std::cerr << "Invalid error at step " << i << ": " << error << std::endl;
+            error = 0.0;
+        }
+        
         errors.push_back(error);
         max_error = std::max(max_error, error);
     }
@@ -368,6 +388,180 @@ cv::Mat createErrorGraph(
     min_text << "Min: " << std::fixed << std::setprecision(1) << min_observed << "m";
     cv::putText(graph, min_text.str(),
                cv::Point(stats_x, stats_y + 75),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    
+    return graph;
+}
+
+cv::Mat createErrorGraph(
+    const std::vector<double>& errors,
+    const std::string &algorithm_name)
+{
+    std::cout << "Creating error graph..." << std::endl;
+    std::cout << "Error values: " << errors.size() << std::endl;
+    
+    // Graph dimensions
+    int graph_width = 1100;
+    int graph_height = 700;
+    int margin_left = 80;
+    int margin_right = 220;
+    int margin_top = 80;
+    int margin_bottom = 160;
+    int plot_width = graph_width - margin_left - margin_right;
+    int plot_height = graph_height - margin_top - margin_bottom;
+    
+    cv::Mat graph(graph_height, graph_width, CV_8UC3, cv::Scalar(240, 240, 240));
+    
+    // Validate input
+    if (errors.empty()) {
+        std::cerr << "Error: No error data for graph generation" << std::endl;
+        cv::putText(graph, "No data available", cv::Point(400, 350),
+                   cv::FONT_HERSHEY_SIMPLEX, 1.0, cv::Scalar(0, 0, 0), 2);
+        return graph;
+    }
+
+    // Find max error for scaling
+    double max_error = 0.0;
+    for (double error : errors) {
+        if (std::isnan(error) || std::isinf(error)) {
+            std::cerr << "Warning: Invalid error value detected: " << error << std::endl;
+            continue;
+        }
+        max_error = std::max(max_error, error);
+    }
+    
+    // Round up max_error to nearest 10
+    max_error = std::ceil(max_error / 10.0) * 10.0;
+    if (max_error < 10.0) max_error = 10.0;
+    
+    std::cout << "Graph max error scale: " << max_error << "m" << std::endl;
+    
+    // Draw graph border and background
+    cv::rectangle(graph, 
+                 cv::Point(margin_left, margin_top),
+                 cv::Point(graph_width - margin_right, graph_height - margin_bottom),
+                 cv::Scalar(255, 255, 255), -1);
+    cv::rectangle(graph, 
+                 cv::Point(margin_left, margin_top),
+                 cv::Point(graph_width - margin_right, graph_height - margin_bottom),
+                 cv::Scalar(0, 0, 0), 2);
+    
+    // Draw grid lines and Y-axis labels
+    int num_y_divisions = 5;
+    for (int i = 0; i <= num_y_divisions; i++) {
+        int y = margin_top + (plot_height * i) / num_y_divisions;
+        
+        cv::line(graph,
+                cv::Point(margin_left, y),
+                cv::Point(graph_width - margin_right, y),
+                cv::Scalar(220, 220, 220), 1);
+        
+        double error_value = max_error * (1.0 - (double)i / num_y_divisions);
+        std::ostringstream label;
+        label << std::fixed << std::setprecision(1) << error_value << "m";
+        cv::putText(graph, label.str(),
+                   cv::Point(10, y + 5),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+    }
+    
+    // Draw X-axis labels
+    int num_x_divisions = std::min(10, (int)errors.size());
+    for (int i = 0; i <= num_x_divisions; i++) {
+        int step = (errors.size() - 1) * i / num_x_divisions;
+        int x = margin_left + (plot_width * i) / num_x_divisions;
+        
+        cv::putText(graph, std::to_string(step),
+                   cv::Point(x - 15, graph_height - margin_bottom + 30),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+    }
+    
+    // Draw error line
+    for (size_t i = 1; i < errors.size(); i++) {
+        int x1 = margin_left + (plot_width * (i - 1)) / (errors.size() - 1);
+        int x2 = margin_left + (plot_width * i) / (errors.size() - 1);
+        
+        // Clamp errors to valid range
+        double clamped_error1 = std::min(max_error, std::max(0.0, errors[i - 1]));
+        double clamped_error2 = std::min(max_error, std::max(0.0, errors[i]));
+        
+        double normalized_y1 = clamped_error1 / max_error;
+        double normalized_y2 = clamped_error2 / max_error;
+        
+        int y1 = margin_top + plot_height - static_cast<int>(plot_height * normalized_y1);
+        int y2 = margin_top + plot_height - static_cast<int>(plot_height * normalized_y2);
+        
+        // Color based on error magnitude
+        cv::Scalar line_color;
+        double avg_error = (errors[i - 1] + errors[i]) / 2.0;
+        if (avg_error < 10.0)
+            line_color = cv::Scalar(0, 200, 0);
+        else if (avg_error < 30.0)
+            line_color = cv::Scalar(0, 165, 255);
+        else
+            line_color = cv::Scalar(0, 0, 255);
+        
+        cv::line(graph, cv::Point(x1, y1), cv::Point(x2, y2), line_color, 2);
+    }
+    
+    // Calculate statistics
+    double mean_error = 0.0;
+    for (double error : errors) {
+        mean_error += error;
+    }
+    mean_error /= errors.size();
+    
+    double max_observed = *std::max_element(errors.begin(), errors.end());
+    double min_observed = *std::min_element(errors.begin(), errors.end());
+    
+    std::cout << "Graph statistics - Mean: " << mean_error 
+              << "m, Max: " << max_observed << "m, Min: " << min_observed << "m" << std::endl;
+    
+    // Draw title
+    cv::putText(graph, "Position Error Over Time - " + algorithm_name,
+               cv::Point(graph_width / 2 - 250, 40),
+               cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 0, 0), 2);
+    
+    // Draw axis labels
+    cv::putText(graph, "Step",
+               cv::Point(graph_width / 2 - 20, graph_height - margin_bottom + 60),
+               cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(0, 0, 0), 1);
+    
+    // Draw legend
+    int legend_x = margin_left + 20;
+    int legend_y = graph_height - margin_bottom + 80;
+    
+    cv::line(graph, cv::Point(legend_x, legend_y), cv::Point(legend_x + 40, legend_y),
+            cv::Scalar(0, 200, 0), 3);
+    cv::putText(graph, "< 10m (Good)", cv::Point(legend_x + 50, legend_y + 3),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    
+    cv::line(graph, cv::Point(legend_x, legend_y + 23), cv::Point(legend_x + 40, legend_y + 23),
+            cv::Scalar(0, 165, 255), 3);
+    cv::putText(graph, "10-30m (Fair)", cv::Point(legend_x + 50, legend_y + 26),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    
+    cv::line(graph, cv::Point(legend_x, legend_y + 46), cv::Point(legend_x + 40, legend_y + 46),
+            cv::Scalar(0, 0, 255), 3);
+    cv::putText(graph, "> 30m (Poor)", cv::Point(legend_x + 50, legend_y + 49),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    
+    // Draw statistics box
+    int stats_x = graph_width - margin_right + 10;
+    int stats_y = margin_top + 20;
+    
+    cv::putText(graph, "Statistics:", cv::Point(stats_x, stats_y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 0, 0), 1);
+    
+    std::ostringstream mean_text, max_text, min_text;
+    mean_text << "Mean: " << std::fixed << std::setprecision(1) << mean_error << "m";
+    max_text << "Max: " << std::fixed << std::setprecision(1) << max_observed << "m";
+    min_text << "Min: " << std::fixed << std::setprecision(1) << min_observed << "m";
+    
+    cv::putText(graph, mean_text.str(), cv::Point(stats_x, stats_y + 25),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    cv::putText(graph, max_text.str(), cv::Point(stats_x, stats_y + 50),
+               cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
+    cv::putText(graph, min_text.str(), cv::Point(stats_x, stats_y + 75),
                cv::FONT_HERSHEY_SIMPLEX, 0.45, cv::Scalar(0, 0, 0), 1);
     
     return graph;

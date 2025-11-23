@@ -7,6 +7,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.o.d"
   "CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.o"
   "CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.o.d"
+  "CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o"
+  "CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o.d"
   "CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o"
   "CMakeFiles/DroneNavigation.dir/src/ORBFeatureEstimator.cpp.o.d"
   "CMakeFiles/DroneNavigation.dir/src/SIFTFeatureEstimator.cpp.o"

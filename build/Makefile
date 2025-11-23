@@ -238,6 +238,30 @@ src/HybridEstimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/HybridEstimator.cpp.s
 .PHONY : src/HybridEstimator.cpp.s
 
+src/KalmanFilter.o: src/KalmanFilter.cpp.o
+.PHONY : src/KalmanFilter.o
+
+# target to build an object file
+src/KalmanFilter.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o
+.PHONY : src/KalmanFilter.cpp.o
+
+src/KalmanFilter.i: src/KalmanFilter.cpp.i
+.PHONY : src/KalmanFilter.i
+
+# target to preprocess a source file
+src/KalmanFilter.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.i
+.PHONY : src/KalmanFilter.cpp.i
+
+src/KalmanFilter.s: src/KalmanFilter.cpp.s
+.PHONY : src/KalmanFilter.s
+
+# target to generate assembly for a file
+src/KalmanFilter.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.s
+.PHONY : src/KalmanFilter.cpp.s
+
 src/Main.o: src/Main.cpp.o
 .PHONY : src/Main.o
 
@@ -428,6 +452,9 @@ help:
 	@echo "... src/HybridEstimator.o"
 	@echo "... src/HybridEstimator.i"
 	@echo "... src/HybridEstimator.s"
+	@echo "... src/KalmanFilter.o"
+	@echo "... src/KalmanFilter.i"
+	@echo "... src/KalmanFilter.s"
 	@echo "... src/Main.o"
 	@echo "... src/Main.i"
 	@echo "... src/Main.s"
