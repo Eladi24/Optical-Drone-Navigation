@@ -40,6 +40,18 @@ cv::Mat createErrorGraph(
     const std::vector<double>& error_values,  // Pre-calculated errors
     const std::string &algorithm_name);
 
+// Add this new function declaration:
+cv::Mat addLegendToCanvas(
+    const cv::Mat& zoomed_vis,
+    bool is_waypoint_mode,
+    const std::string& algorithm_name,
+    double speed,
+    double heading,
+    double sim_dt,
+    int crop_size,
+    double current_error_m
+);
+
 // Helper to update all visualization windows at once
 void updateAllDisplays(
     const cv::Mat& simulation_vis,

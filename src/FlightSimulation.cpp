@@ -1,5 +1,6 @@
 #include <opencv2/opencv.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
 #include <iostream>
 #include <fstream>
 #include <sys/stat.h>
@@ -255,6 +256,26 @@ void runDroneSimulation(
     cv::namedWindow("Drone View", cv::WINDOW_NORMAL);
     cv::namedWindow("Telemetry Data", cv::WINDOW_NORMAL);
     cv::resizeWindow("Drone Simulation", 1200, 800);
+
+    // 🆕 VIDEO WRITER SETUP - Simple approach
+    std::string video_filename = "Videos/simulation_" + algorithm_name + "_" + 
+                                location_name + "_" + path_type + ".avi";
+    
+    mkdir("Videos", 0755);  // Create directory if needed
+    
+    int video_width = 1200;
+    int video_height = 800;
+    double fps = 10.0;  // Matches cv::waitKey(100) = 10fps
+    
+    cv::VideoWriter video_writer;
+    int fourcc = cv::VideoWriter::fourcc('M', 'J', 'P', 'G');
+    video_writer.open(video_filename, fourcc, fps, cv::Size(video_width, video_height), true);
+    
+    if (video_writer.isOpened()) {
+        std::cout << "✓ Recording video: " << video_filename << std::endl;
+    } else {
+        std::cerr << "⚠️  Video recording disabled (could not open writer)" << std::endl;
+    }
 
     // Storage for results and telemetry
     std::vector<std::pair<double, double>> raw_visual_positions;      // Raw from algorithm
@@ -608,7 +629,7 @@ void runDroneSimulation(
         
         cv::Mat telem_vis = createTelemetryVisualization(telem_data, step);
 
-        // Apply zoom
+        // Apply zoom FIRST
         int width = max_x - min_x;
         int height = max_y - min_y;
         int padding_x = std::max(static_cast<int>(width * 0.2), 50);
@@ -629,7 +650,26 @@ void runDroneSimulation(
             zoomed_vis = sim_vis;
         }
 
-        updateAllDisplays(zoomed_vis, drone_view, telem_vis);
+        // Add legend to zoomed visualization
+        double current_error = telemetry_entries.empty() ? -1.0 : telemetry_entries.back().total_error_m;
+        cv::Mat canvas = addLegendToCanvas(
+            zoomed_vis,
+            is_waypoint_mode,
+            algorithm_name + " + Kalman",
+            speed,
+            drone.getHeading(),
+            sim_dt,
+            crop_size,
+            current_error
+        );
+
+        // NOW use canvas for display and video
+        cv::Mat video_frame;
+        cv::resize(canvas, video_frame, cv::Size(video_width, video_height));
+        if (video_writer.isOpened()) video_writer.write(video_frame);
+        
+        // Update displays
+        updateAllDisplays(canvas, drone_view, telem_vis);
         
         // --- Check Termination Conditions ---
         bool destination_reached = false;
@@ -716,6 +756,32 @@ void runDroneSimulation(
     }
     std::cout << std::string(80, '=') << std::endl;
     
+    // 🆕 ADD ERROR GRAPH TO VIDEO (5 seconds)
+    if (video_writer.isOpened()) {
+        std::cout << "\nAdding error graph to video (5 seconds)..." << std::endl;
+        
+        // Generate error graph first
+        std::vector<double> error_values;
+        error_values.reserve(telemetry_entries.size());
+        for (const auto& entry : telemetry_entries) {
+            error_values.push_back(entry.total_error_m);
+        }
+        
+        cv::Mat error_graph = createErrorGraph(error_values, algorithm_name + " + Kalman");
+        
+        // Resize to video dimensions
+        cv::Mat graph_resized;
+        cv::resize(error_graph, graph_resized, cv::Size(video_width, video_height));
+        
+        // Write 50 frames (5 seconds at 10fps)
+        for (int i = 0; i < 50; i++) {
+            video_writer.write(graph_resized);
+        }
+        
+        video_writer.release();
+        std::cout << "✓ Video saved: " << video_filename << std::endl;
+    }
+
     // --- Generate and Save Error Comparison Graph ---
     // 🆕 Extract errors from telemetry (already calculated correctly)
     std::vector<double> error_values;

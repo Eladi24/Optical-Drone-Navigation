@@ -165,11 +165,21 @@ void processAndSimulatePath(
     
     // Fetch and save map
     cv::Mat path_map = fetchMapImage(url_ss.str());
-    if (path_map.empty()) {
-        std::cerr << "Failed to fetch " << config.name << " map\n";
-        return;
+    // if (path_map.empty()) {
+    //     std::cerr << "Failed to fetch " << config.name << " map\n";
+    //     return;
+    // }
+    // cv::imwrite("Images/map_" + config.name + ".png", path_map);
+
+    if (path_map.empty()) 
+    {
+        std::cout << "Using existing " << config.name << " map from disk." << std::endl;
+        path_map = cv::imread("Images/map_" + config.name + ".png");
     }
-    cv::imwrite("Images/map_" + config.name + ".png", path_map);
+    else 
+    {
+        cv::imwrite("Images/map_" + config.name + ".png", path_map);
+    }
     
     // Generate crops
     std::vector<ReferenceCrop> crops;
@@ -300,12 +310,22 @@ int main(int argc, char** argv)
                      << "&key=" << apiKey;
 
     cv::Mat clean_map_jer = fetchMapImage(clean_url_ss_jer.str());
-    if (clean_map_jer.empty())
+    // if (clean_map_jer.empty())
+    // {
+    //     std::cerr << "Failed to fetch Jerusalem clean map\n";
+    //     return 1;
+    // }
+    // cv::imwrite("Images/map_clean_jerusalem.png", clean_map_jer);
+
+    if (clean_map_jer.empty()) 
     {
-        std::cerr << "Failed to fetch Jerusalem clean map\n";
-        return 1;
+        std::cout << "Using existing Jerusalem clean map from disk." << std::endl;
+        clean_map_jer = cv::imread("Images/map_clean_jerusalem.png");
     }
-    cv::imwrite("Images/map_clean_jerusalem.png", clean_map_jer);
+    else 
+    {
+        cv::imwrite("Images/map_clean_jerusalem.png", clean_map_jer);
+    }
 
     double pixels_per_100m_jer = 100.0 / mpp_jer;
     int crop_size_jer = static_cast<int>(std::round(pixels_per_100m_jer));
@@ -412,12 +432,22 @@ int main(int argc, char** argv)
                      << "&key=" << apiKey;
 
     cv::Mat clean_map_nyc = fetchMapImage(clean_url_ss_nyc.str());
-    if (clean_map_nyc.empty())
+    // if (clean_map_nyc.empty())
+    // {
+    //     std::cerr << "Failed to fetch Manhattan clean map\n";
+    //     return 1;
+    // }
+    // cv::imwrite("Images/map_clean_manhattan.png", clean_map_nyc);
+
+    if (clean_map_nyc.empty()) 
     {
-        std::cerr << "Failed to fetch Manhattan clean map\n";
-        return 1;
+        std::cout << "Using existing Manhattan clean map from disk." << std::endl;
+        clean_map_nyc = cv::imread("Images/map_clean_manhattan.png");
     }
-    cv::imwrite("Images/map_clean_manhattan.png", clean_map_nyc);
+    else 
+    {
+        cv::imwrite("Images/map_clean_manhattan.png", clean_map_nyc);
+    }
 
     double pixels_per_100m_nyc = 100.0 / mpp_nyc;
     int crop_size_nyc = static_cast<int>(std::round(pixels_per_100m_nyc));
