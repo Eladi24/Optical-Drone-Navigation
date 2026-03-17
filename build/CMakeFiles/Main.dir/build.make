@@ -147,6 +147,7 @@ Main: /usr/local/lib/libopencv_xphoto.so.4.10.0
 Main: /usr/local/lib/libopencv_photo.so.4.10.0
 Main: /usr/local/lib/libopencv_imgproc.so.4.10.0
 Main: /usr/local/lib/libopencv_core.so.4.10.0
+Main: /usr/lib/x86_64-linux-gnu/libcurl.so
 Main: CMakeFiles/Main.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable Main"
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/Main.dir/link.txt --verbose=$(VERBOSE)

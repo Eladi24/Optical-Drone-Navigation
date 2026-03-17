@@ -489,6 +489,9 @@ CMakeFiles/Main.dir/src/Main.cpp.o
  /usr/include/c++/11/pstl/glue_numeric_defs.h
  /home/eladubuntu/Optical-Drone-Navigation/include/PositionEstimation.hpp
  /home/eladubuntu/Optical-Drone-Navigation/include/CoordinateUtils.hpp
+ /home/eladubuntu/Optical-Drone-Navigation/include/VideoProcessing.hpp
+ /home/eladubuntu/Optical-Drone-Navigation/include/KalmanFilter.hpp
+ /home/eladubuntu/Optical-Drone-Navigation/include/GlobalLocator.hpp
  /usr/include/c++/11/fstream
  /usr/include/x86_64-linux-gnu/c++/11/bits/basic_file.h
  /usr/include/x86_64-linux-gnu/c++/11/bits/c++io.h

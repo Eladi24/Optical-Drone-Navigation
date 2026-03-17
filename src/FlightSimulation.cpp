@@ -218,7 +218,7 @@ void runDroneSimulation(
     bool is_waypoint_mode = waypoints.size() > 2;
 
     // Initialize simulation parameters
-    double speed = 6.0;                    // m/s
+    double speed = 10.0;                    // m/s
     double drift = 0.0;                    // No drift
     double sim_dt = 1.0;                   // 1 second per step
     int crop_size = static_cast<int>(std::round(100.0 / mpp));
@@ -420,6 +420,12 @@ void runDroneSimulation(
         int best_match_idx = estimate.best_match_idx;
         
         raw_visual_positions.push_back(raw_visual_position);
+
+        // 🆕 GET MATCHED REFERENCE CROP FOR VISUALIZATION
+        cv::Mat matched_crop;
+        if (best_match_idx >= 0 && best_match_idx < reference_crops.size()) {
+            matched_crop = reference_crops[best_match_idx].image.clone();
+        }
 
         // ==================== KALMAN FILTER UPDATE ====================
         
@@ -660,7 +666,9 @@ void runDroneSimulation(
             drone.getHeading(),
             sim_dt,
             crop_size,
-            current_error
+            current_error,
+            drone_view,          // 🆕 Pass current drone view
+            matched_crop         // 🆕 Pass matched reference crop
         );
 
         // NOW use canvas for display and video
@@ -670,6 +678,12 @@ void runDroneSimulation(
         
         // Update displays
         updateAllDisplays(canvas, drone_view, telem_vis);
+        
+        // 🆕 PAUSE FOR 2 SECONDS TO SHOW THE MATCH
+        for (int pause_frame = 0; pause_frame < 3; pause_frame++) {
+            video_writer.write(video_frame);
+        }
+        cv::waitKey(300);
         
         // --- Check Termination Conditions ---
         bool destination_reached = false;
@@ -692,12 +706,12 @@ void runDroneSimulation(
         
         if (destination_reached) break;
 
-        // Check for user exit
-        char key = cv::waitKey(100);
-        if (key == 27 || key == 'q') {
-            std::cout << "\nSimulation terminated by user." << std::endl;
-            break;
-        }
+        // // Check for user exit
+        // char key = cv::waitKey(100);
+        // if (key == 27 || key == 'q') {
+        //     std::cout << "\nSimulation terminated by user." << std::endl;
+        //     break;
+        // }
     }
     // ==================== END SIMULATION LOOP ====================
     

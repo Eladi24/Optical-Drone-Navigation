@@ -49,7 +49,9 @@ cv::Mat addLegendToCanvas(
     double heading,
     double sim_dt,
     int crop_size,
-    double current_error_m
+    double current_error_m,
+    const cv::Mat& drone_view = cv::Mat(),           // Current drone camera view
+    const cv::Mat& matched_crop = cv::Mat()          // Best matched reference crop
 );
 
 // Helper to update all visualization windows at once

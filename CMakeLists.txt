@@ -21,6 +21,9 @@ find_package(OpenCV REQUIRED)
 # libcurl (for HTTP calls to Google APIs)
 find_package(CURL REQUIRED)
 
+# pthread
+find_package(Threads REQUIRED)
+
 # Add include directories
 include_directories(${OpenCV_INCLUDE_DIRS} ${CURL_INCLUDE_DIRS} .)
 include_directories(${CMAKE_SOURCE_DIR}/include) 
@@ -44,11 +47,14 @@ add_library(DroneNavigation
     src/CoordinateUtils.cpp
     src/KalmanFilter.cpp
     
+    # Video processing
+    src/VideoProcessing.cpp
+    src/GlobalLocator.cpp
     # Utils (add as you create them)
     # src/CoordinateUtils.cpp
     # src/FileUtils.cpp
 )
-target_link_libraries(DroneNavigation ${OpenCV_LIBS})
+target_link_libraries(DroneNavigation ${OpenCV_LIBS} ${CURL_LIBRARIES} Threads::Threads)
 
 # ----- Google Maps + OpenCV sample -----
 add_executable(Main src/Main.cpp)

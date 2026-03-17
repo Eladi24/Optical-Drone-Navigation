@@ -22,5 +22,11 @@ public:
                                   const std::pair<double, double> &to,
                                   double meters_per_degree_lat,
                                   double meters_per_degree_lng);
+    
+    static std::pair<double, double> pixelToLatLng(int pixel_x, int pixel_y,
+                                                   double center_lat, double center_lng,
+                                                   int center_x, int center_y,
+                                                   double mpp, double meters_per_degree_lat,
+                                                   double meters_per_degree_lng);
 };
 #endif // COORDINATEUTILS_HPP

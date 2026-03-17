@@ -47,3 +47,21 @@ double CoordinateUtils::calculateHeading(const std::pair<double, double> &from,
     
     return heading;
 }
+
+std::pair<double, double> CoordinateUtils::pixelToLatLng(int pixel_x, int pixel_y,
+                                                         double center_lat, double center_lng,
+                                                         int center_x, int center_y,
+                                                         double mpp, double meters_per_degree_lat,
+                                                         double meters_per_degree_lng)
+{
+    // Convert pixel offsets back to meters
+    double delta_meters_x = (pixel_x - center_x) * mpp;
+    // Note: Y is inverted because pixel coordinates go down, but latitude goes up!
+    double delta_meters_y = (center_y - pixel_y) * mpp; 
+    
+    // Convert meters back to degrees
+    double delta_lat = delta_meters_y / meters_per_degree_lat;
+    double delta_lng = delta_meters_x / meters_per_degree_lng;
+    
+    return {center_lat + delta_lat, center_lng + delta_lng};
+}

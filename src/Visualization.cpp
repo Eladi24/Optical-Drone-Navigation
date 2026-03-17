@@ -575,12 +575,14 @@ cv::Mat addLegendToCanvas(
     double heading,
     double sim_dt,
     int crop_size,
-    double current_error_m)
+    double current_error_m,
+    const cv::Mat& drone_view,
+    const cv::Mat& matched_crop)
 {
-    // 🆕 ADD WHITE BORDER/MARGIN AROUND IMAGE FOR LEGEND
+    // 🆕 ADD WHITE BORDER/MARGIN AROUND IMAGE FOR LEGEND AND IMAGE BOXES
     int margin_left = 200;      // Space for legend on left
     int margin_right = 20;      // Small margin on right
-    int margin_top = 20;        // Small margin on top
+    int margin_top = 150;       // 🆕 MORE SPACE for image boxes
     int margin_bottom = 20;     // Small margin on bottom
     
     // Create canvas with white borders
@@ -592,12 +594,64 @@ cv::Mat addLegendToCanvas(
     zoomed_vis.copyTo(canvas(cv::Rect(margin_left, margin_top, 
                                      zoomed_vis.cols, zoomed_vis.rows)));
 
-    // LEGEND BOX POSITIONING
-    int legend_x = 15;  
-    int legend_y = canvas.rows - (is_waypoint_mode ? 210 : 200);
-    int legend_width = 170;
-    int legend_height = is_waypoint_mode ? 200 : 190;
-    int line_spacing = 17;
+    // 🆕 DRAW DRONE VIEW AND MATCHED CROP BOXES AT TOP
+    if (!drone_view.empty() && !matched_crop.empty()) {
+        int box_width = 120;
+        int box_height = 120;
+        int box_y = 15;  // Top margin
+        int spacing = 20;
+        
+        // Calculate center position for both boxes
+        int total_width = box_width * 2 + spacing;
+        int start_x = (canvas.cols - total_width) / 2;
+        
+        // --- CURRENT VIEW BOX (Left) ---
+        int drone_x = start_x;
+        
+        // Resize drone view to fit box
+        cv::Mat drone_resized;
+        cv::resize(drone_view, drone_resized, cv::Size(box_width, box_height));
+        
+        // Draw box border
+        cv::rectangle(canvas, 
+                     cv::Rect(drone_x - 2, box_y - 2, box_width + 4, box_height + 4),
+                     cv::Scalar(0, 165, 255), 2);  // Orange border
+        
+        // Copy drone view
+        drone_resized.copyTo(canvas(cv::Rect(drone_x, box_y, box_width, box_height)));
+        
+        // Add label below - 🆕 SMALLER AND BETTER POSITIONED
+        cv::putText(canvas, "Current View", 
+                   cv::Point(drone_x + 15, box_y + box_height + 15),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.5, thickness 1
+        
+        // --- MATCHED REFERENCE BOX (Right) ---
+        int matched_x = drone_x + box_width + spacing;
+        
+        // Resize matched crop to fit box
+        cv::Mat matched_resized;
+        cv::resize(matched_crop, matched_resized, cv::Size(box_width, box_height));
+        
+        // Draw box border
+        cv::rectangle(canvas, 
+                     cv::Rect(matched_x - 2, box_y - 2, box_width + 4, box_height + 4),
+                     cv::Scalar(0, 255, 255), 2);  // Yellow border
+        
+        // Copy matched crop
+        matched_resized.copyTo(canvas(cv::Rect(matched_x, box_y, box_width, box_height)));
+        
+        // Add label below - 🆕 SMALLER AND BETTER POSITIONED
+        cv::putText(canvas, "Reference Match", 
+                   cv::Point(matched_x + 2, box_y + box_height + 15),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.4, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.5, thickness 1
+    }
+
+    // 🆕 EXTRA COMPACT LEGEND BOX (Bottom Left)
+    int legend_x = 8;  
+    int legend_y = canvas.rows - (is_waypoint_mode ? 150 : 145);  // 🆕 MOVED UP from 132 to 142
+    int legend_width = 130;  // Reduced from 145
+    int legend_height = is_waypoint_mode ? 145 : 127;  // Further reduced
+    int line_spacing = 12;  // Reduced from 14
     
     // Safety checks
     if (legend_y < 10) {
@@ -607,128 +661,128 @@ cv::Mat addLegendToCanvas(
         legend_y = canvas.rows - legend_height - 5;
     }
     
-    // Draw legend box border
+    // Draw legend box border - thinner
     cv::rectangle(canvas, cv::Rect(legend_x, legend_y, legend_width, legend_height),
-                 cv::Scalar(100, 100, 100), 2);
+                 cv::Scalar(100, 100, 100), 1);  // 1px instead of 2px
     
-    // Title
+    // Title - smaller font
     cv::putText(canvas, "LEGEND", 
-               cv::Point(legend_x + 55, legend_y + 17),
-               cv::FONT_HERSHEY_SIMPLEX, 0.43, cv::Scalar(0, 0, 0), 1);
+               cv::Point(legend_x + 42, legend_y + 13),
+               cv::FONT_HERSHEY_SIMPLEX, 0.34, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.38
     
-    int y = legend_y + 33;
+    int y = legend_y + 25;  // Reduced from 28
     
     // Orange line - Actual GPS
-    cv::line(canvas, cv::Point(legend_x + 8, y), cv::Point(legend_x + 40, y),
-            cv::Scalar(0, 165, 255), 3);
+    cv::line(canvas, cv::Point(legend_x + 5, y), cv::Point(legend_x + 28, y),
+            cv::Scalar(0, 165, 255), 2);  // Shorter line
     cv::putText(canvas, "GPS Path", 
-               cv::Point(legend_x + 48, y + 4),
-               cv::FONT_HERSHEY_SIMPLEX, 0.36, cv::Scalar(0, 0, 0), 1);
+               cv::Point(legend_x + 33, y + 3),
+               cv::FONT_HERSHEY_SIMPLEX, 0.27, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.30
     y += line_spacing;
     
     // Yellow line - Estimated
-    cv::line(canvas, cv::Point(legend_x + 8, y), cv::Point(legend_x + 40, y),
-            cv::Scalar(0, 255, 255), 3);
+    cv::line(canvas, cv::Point(legend_x + 5, y), cv::Point(legend_x + 28, y),
+            cv::Scalar(0, 255, 255), 2);
     cv::putText(canvas, "Estimated", 
-               cv::Point(legend_x + 48, y + 4),
-               cv::FONT_HERSHEY_SIMPLEX, 0.36, cv::Scalar(0, 0, 0), 1);
-    y += 11;
+               cv::Point(legend_x + 33, y + 3),
+               cv::FONT_HERSHEY_SIMPLEX, 0.27, cv::Scalar(0, 0, 0), 1);
+    y += 8;  // Reduced from 9
     cv::putText(canvas, "(filtered)", 
-               cv::Point(legend_x + 48, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.27, cv::Scalar(80, 80, 80), 1);
-    y += 6;
+               cv::Point(legend_x + 33, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.22, cv::Scalar(80, 80, 80), 1);  // Reduced from 0.24
+    y += 4;
     
     // Grey line - Raw Visual
-    cv::line(canvas, cv::Point(legend_x + 8, y), cv::Point(legend_x + 40, y),
-            cv::Scalar(150, 150, 150), 2);
+    cv::line(canvas, cv::Point(legend_x + 5, y), cv::Point(legend_x + 28, y),
+            cv::Scalar(150, 150, 150), 1);
     cv::putText(canvas, "Raw Visual", 
-               cv::Point(legend_x + 48, y + 4),
-               cv::FONT_HERSHEY_SIMPLEX, 0.36, cv::Scalar(100, 100, 100), 1);
-    y += 11;
+               cv::Point(legend_x + 33, y + 3),
+               cv::FONT_HERSHEY_SIMPLEX, 0.27, cv::Scalar(100, 100, 100), 1);
+    y += 8;
     cv::putText(canvas, "(unfiltered)", 
-               cv::Point(legend_x + 48, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.27, cv::Scalar(120, 120, 120), 1);
-    y += 6;
+               cv::Point(legend_x + 33, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.22, cv::Scalar(120, 120, 120), 1);
+    y += 4;
     
     // Separator 1
-    y += 4;
-    cv::line(canvas, cv::Point(legend_x + 5, y), cv::Point(legend_x + 165, y),
+    y += 3;
+    cv::line(canvas, cv::Point(legend_x + 3, y), cv::Point(legend_x + 127, y),
             cv::Scalar(150, 150, 150), 1);
-    y += 11;
+    y += 8;
     
-    // Waypoint markers
-    cv::circle(canvas, cv::Point(legend_x + 15, y - 2), 4, cv::Scalar(0, 255, 0), -1);
-    cv::circle(canvas, cv::Point(legend_x + 15, y - 2), 4, cv::Scalar(0, 0, 0), 1);
+    // Waypoint markers - more compact
+    cv::circle(canvas, cv::Point(legend_x + 10, y - 2), 3, cv::Scalar(0, 255, 0), -1);
+    cv::circle(canvas, cv::Point(legend_x + 10, y - 2), 3, cv::Scalar(0, 0, 0), 1);
     cv::putText(canvas, "S", 
-               cv::Point(legend_x + 22, y + 2),
-               cv::FONT_HERSHEY_SIMPLEX, 0.34, cv::Scalar(0, 0, 0), 1);
+               cv::Point(legend_x + 16, y + 2),
+               cv::FONT_HERSHEY_SIMPLEX, 0.26, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.28
     
-    cv::circle(canvas, cv::Point(legend_x + 55, y - 2), 4, cv::Scalar(255, 0, 0), -1);
-    cv::circle(canvas, cv::Point(legend_x + 55, y - 2), 4, cv::Scalar(0, 0, 0), 1);
+    cv::circle(canvas, cv::Point(legend_x + 40, y - 2), 3, cv::Scalar(255, 0, 0), -1);
+    cv::circle(canvas, cv::Point(legend_x + 40, y - 2), 3, cv::Scalar(0, 0, 0), 1);
     cv::putText(canvas, "E", 
-               cv::Point(legend_x + 62, y + 2),
-               cv::FONT_HERSHEY_SIMPLEX, 0.34, cv::Scalar(0, 0, 0), 1);
+               cv::Point(legend_x + 46, y + 2),
+               cv::FONT_HERSHEY_SIMPLEX, 0.26, cv::Scalar(0, 0, 0), 1);
     
     if (is_waypoint_mode) {
-        cv::circle(canvas, cv::Point(legend_x + 95, y - 2), 4, cv::Scalar(255, 0, 255), -1);
-        cv::circle(canvas, cv::Point(legend_x + 95, y - 2), 4, cv::Scalar(0, 0, 0), 1);
+        cv::circle(canvas, cv::Point(legend_x + 70, y - 2), 3, cv::Scalar(255, 0, 255), -1);
+        cv::circle(canvas, cv::Point(legend_x + 70, y - 2), 3, cv::Scalar(0, 0, 0), 1);
         cv::putText(canvas, "T", 
-                   cv::Point(legend_x + 102, y + 2),
-                   cv::FONT_HERSHEY_SIMPLEX, 0.34, cv::Scalar(0, 0, 0), 1);
+                   cv::Point(legend_x + 76, y + 2),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.26, cv::Scalar(0, 0, 0), 1);
     }
     
     // Separator 2
-    y += 14;
-    cv::line(canvas, cv::Point(legend_x + 5, y), cv::Point(legend_x + 165, y),
+    y += 10;  // Reduced from 12
+    cv::line(canvas, cv::Point(legend_x + 3, y), cv::Point(legend_x + 127, y),
             cv::Scalar(150, 150, 150), 1);
-    y += 14;
+    y += 10;  // Reduced from 12
     
-    // FLIGHT INFO SECTION
+    // FLIGHT INFO SECTION - smaller title
     cv::putText(canvas, "FLIGHT INFO", 
-               cv::Point(legend_x + 38, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.38, cv::Scalar(0, 0, 0), 1);
-    y += 15;
+               cv::Point(legend_x + 26, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.29, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.32
+    y += 11;  // Reduced from 13
     
     // Speed
     std::ostringstream speed_str;
     speed_str << "Speed: " << std::fixed << std::setprecision(1) << speed << " m/s";
     cv::putText(canvas, speed_str.str(), 
-               cv::Point(legend_x + 8, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.31, cv::Scalar(0, 0, 0), 1);
-    y += 13;
+               cv::Point(legend_x + 5, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 0, 0), 1);  // Reduced from 0.27
+    y += 10;  // Reduced from 11
     
     // Heading
     std::ostringstream heading_str;
     heading_str << "Heading: " << std::fixed << std::setprecision(0) << heading << " deg";
     cv::putText(canvas, heading_str.str(), 
-               cv::Point(legend_x + 8, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.31, cv::Scalar(0, 0, 0), 1);
-    y += 13;
+               cv::Point(legend_x + 5, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 0, 0), 1);
+    y += 10;
     
     // Capture rate
     std::ostringstream fps_str;
     fps_str << "Capture: " << std::fixed << std::setprecision(0) 
            << (1.0 / sim_dt) << " img/s";
     cv::putText(canvas, fps_str.str(), 
-               cv::Point(legend_x + 8, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.31, cv::Scalar(0, 0, 0), 1);
-    y += 13;
+               cv::Point(legend_x + 5, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 0, 0), 1);
+    y += 10;
     
     // Field of view
     std::ostringstream alt_str;
     alt_str << "FOV: " << crop_size << "x" << crop_size << " px";
     cv::putText(canvas, alt_str.str(), 
-               cv::Point(legend_x + 8, y),
-               cv::FONT_HERSHEY_SIMPLEX, 0.31, cv::Scalar(0, 0, 0), 1);
-    y += 13;
+               cv::Point(legend_x + 5, y),
+               cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(0, 0, 0), 1);
+    y += 10;
     
     // Current error
-    if (current_error_m >= 0.0) {  // Only display if valid
+    if (current_error_m >= 0.0) {
         std::ostringstream error_str;
         error_str << "Error: " << std::fixed << std::setprecision(1) << current_error_m << " m";
         cv::putText(canvas, error_str.str(), 
-                   cv::Point(legend_x + 8, y),
-                   cv::FONT_HERSHEY_SIMPLEX, 0.31, cv::Scalar(200, 0, 0), 1);
+                   cv::Point(legend_x + 5, y),
+                   cv::FONT_HERSHEY_SIMPLEX, 0.25, cv::Scalar(200, 0, 0), 1);
     }
 
     return canvas;

@@ -223,6 +223,34 @@ CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.s"
 	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/KalmanFilter.cpp -o CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.s
 
+CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
+CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o: ../src/VideoProcessing.cpp
+CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o: CMakeFiles/DroneNavigation.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Building CXX object CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o -MF CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o.d -o CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/VideoProcessing.cpp
+
+CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.i"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/VideoProcessing.cpp > CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.i
+
+CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.s"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/VideoProcessing.cpp -o CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.s
+
+CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o: CMakeFiles/DroneNavigation.dir/flags.make
+CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o: ../src/GlobalLocator.cpp
+CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o: CMakeFiles/DroneNavigation.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_13) "Building CXX object CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o -MF CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o.d -o CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o -c /home/eladubuntu/Optical-Drone-Navigation/src/GlobalLocator.cpp
+
+CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.i"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/eladubuntu/Optical-Drone-Navigation/src/GlobalLocator.cpp > CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.i
+
+CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.s"
+	/usr/bin/g++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/eladubuntu/Optical-Drone-Navigation/src/GlobalLocator.cpp -o CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.s
+
 # Object files for target DroneNavigation
 DroneNavigation_OBJECTS = \
 "CMakeFiles/DroneNavigation.dir/src/DroneSimulation.cpp.o" \
@@ -235,7 +263,9 @@ DroneNavigation_OBJECTS = \
 "CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o" \
 "CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o" \
-"CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o"
+"CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o" \
+"CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o" \
+"CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o"
 
 # External object files for target DroneNavigation
 DroneNavigation_EXTERNAL_OBJECTS =
@@ -251,9 +281,11 @@ libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/SmoothedEstimator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/Visualization.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/CoordinateUtils.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/KalmanFilter.cpp.o
+libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o
+libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/build.make
 libDroneNavigation.a: CMakeFiles/DroneNavigation.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_12) "Linking CXX static library libDroneNavigation.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/eladubuntu/Optical-Drone-Navigation/build/CMakeFiles --progress-num=$(CMAKE_PROGRESS_14) "Linking CXX static library libDroneNavigation.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/DroneNavigation.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/DroneNavigation.dir/link.txt --verbose=$(VERBOSE)
 

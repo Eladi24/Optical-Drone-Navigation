@@ -44,4 +44,7 @@
 config.ini
 # Ignore Videos directory (simulation outputs)
 Videos/
+# Ignore Haifa Samples directory
+"Haifa Samples/"
+map_clean_haifa.png
 

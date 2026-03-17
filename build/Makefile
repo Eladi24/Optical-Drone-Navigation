@@ -214,6 +214,30 @@ src/FlightSimulation.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/FlightSimulation.cpp.s
 .PHONY : src/FlightSimulation.cpp.s
 
+src/GlobalLocator.o: src/GlobalLocator.cpp.o
+.PHONY : src/GlobalLocator.o
+
+# target to build an object file
+src/GlobalLocator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.o
+.PHONY : src/GlobalLocator.cpp.o
+
+src/GlobalLocator.i: src/GlobalLocator.cpp.i
+.PHONY : src/GlobalLocator.i
+
+# target to preprocess a source file
+src/GlobalLocator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.i
+.PHONY : src/GlobalLocator.cpp.i
+
+src/GlobalLocator.s: src/GlobalLocator.cpp.s
+.PHONY : src/GlobalLocator.s
+
+# target to generate assembly for a file
+src/GlobalLocator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/GlobalLocator.cpp.s
+.PHONY : src/GlobalLocator.cpp.s
+
 src/HybridEstimator.o: src/HybridEstimator.cpp.o
 .PHONY : src/HybridEstimator.o
 
@@ -406,6 +430,30 @@ src/TemplateMatchingEstimator.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/TemplateMatchingEstimator.cpp.s
 .PHONY : src/TemplateMatchingEstimator.cpp.s
 
+src/VideoProcessing.o: src/VideoProcessing.cpp.o
+.PHONY : src/VideoProcessing.o
+
+# target to build an object file
+src/VideoProcessing.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.o
+.PHONY : src/VideoProcessing.cpp.o
+
+src/VideoProcessing.i: src/VideoProcessing.cpp.i
+.PHONY : src/VideoProcessing.i
+
+# target to preprocess a source file
+src/VideoProcessing.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.i
+.PHONY : src/VideoProcessing.cpp.i
+
+src/VideoProcessing.s: src/VideoProcessing.cpp.s
+.PHONY : src/VideoProcessing.s
+
+# target to generate assembly for a file
+src/VideoProcessing.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/DroneNavigation.dir/build.make CMakeFiles/DroneNavigation.dir/src/VideoProcessing.cpp.s
+.PHONY : src/VideoProcessing.cpp.s
+
 src/Visualization.o: src/Visualization.cpp.o
 .PHONY : src/Visualization.o
 
@@ -449,6 +497,9 @@ help:
 	@echo "... src/FlightSimulation.o"
 	@echo "... src/FlightSimulation.i"
 	@echo "... src/FlightSimulation.s"
+	@echo "... src/GlobalLocator.o"
+	@echo "... src/GlobalLocator.i"
+	@echo "... src/GlobalLocator.s"
 	@echo "... src/HybridEstimator.o"
 	@echo "... src/HybridEstimator.i"
 	@echo "... src/HybridEstimator.s"
@@ -473,6 +524,9 @@ help:
 	@echo "... src/TemplateMatchingEstimator.o"
 	@echo "... src/TemplateMatchingEstimator.i"
 	@echo "... src/TemplateMatchingEstimator.s"
+	@echo "... src/VideoProcessing.o"
+	@echo "... src/VideoProcessing.i"
+	@echo "... src/VideoProcessing.s"
 	@echo "... src/Visualization.o"
 	@echo "... src/Visualization.i"
 	@echo "... src/Visualization.s"
