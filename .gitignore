@@ -47,4 +47,12 @@ Videos/
 # Ignore Haifa Samples directory
 Haifa Samples/
 map_clean_haifa.png
+# Ignore raw telemetry-labeled validation datasets (multi-GB, downloaded manually -- see CLAUDE.md)
+Datasets/
+# Ignore per-video mask/altitude caches (regenerable, video-specific -- see CLAUDE.md)
+masks/
+# Ignore build output (compiled binaries, CMake cache) -- was previously tracked, untracked now
+build/
+# Ignore project reference/notes file (kept local, not committed)
+CLAUDE.md
 
