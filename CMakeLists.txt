@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(TemplateMatching CXX)
+project(DroneNavigationHaifa CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -33,32 +33,42 @@ add_library(DroneNavigation
     # Core simulation
     src/DroneSimulation.cpp
     
-    # Algorithms (add as you create them)
+    # Algorithms
     src/FlightSimulation.cpp
     src/ORBFeatureEstimator.cpp
     src/SIFTFeatureEstimator.cpp
-    src/SURFFeatureEstimator.cpp
-    src/TemplateMatchingEstimator.cpp
     src/HybridEstimator.cpp
-    src/SmoothedEstimator.cpp
+    src/AKAZEFeatureEstimator.cpp
     
-    # Visualization (add as you create them)
+    # Visualization & utilities
     src/Visualization.cpp
     src/CoordinateUtils.cpp
+    src/MapUtils.cpp
     src/KalmanFilter.cpp
     
     # Video processing
     src/VideoProcessing.cpp
     src/GlobalLocator.cpp
-    # Utils (add as you create them)
-    # src/CoordinateUtils.cpp
-    # src/FileUtils.cpp
+    src/ThreadPool.cpp
+    src/EdgeProcessor.cpp
+    src/OpticalFlowTracker.cpp
+    src/VideoPreprocessor.cpp
+    src/GroundTruthAnnotator.cpp
+    src/TelemetryImporter.cpp
+    src/DatasetVideoAssembler.cpp
 )
 target_link_libraries(DroneNavigation ${OpenCV_LIBS} ${CURL_LIBRARIES} Threads::Threads)
 
 # ----- Google Maps + OpenCV sample -----
 add_executable(Main src/Main.cpp)
 target_link_libraries(Main ${OpenCV_LIBS} ${CURL_LIBRARIES} DroneNavigation)
+
+# ----- Ground-truth annotation tool -----
+# Interactive tool for manually geo-referencing landmark frames in the Haifa
+# videos, used to build a small evaluation set (no telemetry/GPS exists to
+# validate the navigation pipeline against otherwise).
+add_executable(GroundTruth src/GroundTruthMain.cpp)
+target_link_libraries(GroundTruth ${OpenCV_LIBS} ${CURL_LIBRARIES} DroneNavigation)
 
 # Coverage target to generate HTML report with lcov
 if(ENABLE_COVERAGE)

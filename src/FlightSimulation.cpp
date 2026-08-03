@@ -13,37 +13,33 @@
 #include <sstream>
 #include <memory>
 #include "FlightSimulation.hpp"
-#include "TemplateMatchingEstimator.hpp"
 #include "ORBFeatureEstimator.hpp"
 #include "SIFTFeatureEstimator.hpp"
-#include "SURFFeatureEstimator.hpp"
 #include "HybridEstimator.hpp"
-#include "SmoothedEstimator.hpp"
+#include "AKAZEFeatureEstimator.hpp"
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm) {
     switch(algorithm) {
-        case PositionAlgorithm::TEMPLATE:
-            return std::make_unique<TemplateMatchingEstimator>();
-        
         case PositionAlgorithm::ORB:
             return std::make_unique<ORBFeatureEstimator>(500);
-        
+
         case PositionAlgorithm::SIFT:
             return std::make_unique<SIFTFeatureEstimator>(0);
-        
-        case PositionAlgorithm::SURF:
-            std::cerr << "Warning: SURF not available, using SIFT instead" << std::endl;
-            return std::make_unique<SIFTFeatureEstimator>(0);
-        
+
+        case PositionAlgorithm::AKAZE:
+            return std::make_unique<AKAZEFeatureEstimator>();
+
+        // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
+        // OpticalFlowTracker, which has a different construction path).
+        // createPositionEstimator should never be called for it — fall through
+        // to ORB as a safe fallback so the simulation path doesn't crash.
+        case PositionAlgorithm::OPTICAL_FLOW:
+            return std::make_unique<ORBFeatureEstimator>(500);
+
         case PositionAlgorithm::HYBRID:
-            return std::make_unique<HybridEstimator>();
-        
-        case PositionAlgorithm::SMOOTHED:
-            return std::make_unique<SmoothedEstimator>(3);
-        
         default:
             return std::make_unique<HybridEstimator>();
     }

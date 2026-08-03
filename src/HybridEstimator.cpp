@@ -1,135 +1,61 @@
 #include "HybridEstimator.hpp"
+#include "CoordinateUtils.hpp"
 #include <cmath>
-#include <iostream>
 
-HybridEstimator::HybridEstimator()
-    : template_estimator_(), orb_estimator_(500), sift_estimator_(0)
+HybridEstimator::HybridEstimator(double agreement_threshold_m)
+    : orb_(500), sift_(500), agreement_threshold_m_(agreement_threshold_m)
+{}
+
+void HybridEstimator::precompute(const std::vector<ReferenceCrop>& crops)
 {
+    orb_.precomputeAll(crops);
+    sift_.precompute(crops);
+}
+
+void HybridEstimator::setFeatureMask(const cv::Mat& mask)
+{
+    orb_.setFeatureMask(mask);
+    sift_.setFeatureMask(mask);
 }
 
 PositionEstimate HybridEstimator::estimatePosition(
-    const cv::Mat& drone_view,
+    const cv::Mat&                    drone_view,
     const std::vector<ReferenceCrop>& reference_crops,
-    const std::pair<double, double>& last_position)
+    const std::pair<double, double>&  last_position)
 {
-    if (drone_view.empty() || reference_crops.empty()) {
+    if (drone_view.empty() || reference_crops.empty())
         return PositionEstimate(last_position, 0.0, -1);
+
+    PositionEstimate orb_est  = orb_.estimatePosition(drone_view, reference_crops, last_position);
+    PositionEstimate sift_est = sift_.estimatePosition(drone_view, reference_crops, last_position);
+
+    const bool orb_ok  = orb_est.confidence  > 0.50;
+    const bool sift_ok = sift_est.confidence > 0.45;
+
+    if (orb_ok && sift_ok) {
+        // Measure geographic distance between the two estimates.
+        // Use a fast flat-earth approximation — good enough within a few km.
+        const double lat_diff_m = (orb_est.position.first  - sift_est.position.first)  * 111320.0;
+        const double lng_mid    = (orb_est.position.first   + sift_est.position.first)  * 0.5 * M_PI / 180.0;
+        const double lng_diff_m = (orb_est.position.second - sift_est.position.second) * 111320.0 * std::cos(lng_mid);
+        const double dist_m     = std::sqrt(lat_diff_m * lat_diff_m + lng_diff_m * lng_diff_m);
+
+        if (dist_m <= agreement_threshold_m_) {
+            // Both agree → weighted average, boosted confidence
+            const double w_sift = 0.6, w_orb = 0.4;
+            double lat = w_sift * sift_est.position.first  + w_orb * orb_est.position.first;
+            double lng = w_sift * sift_est.position.second + w_orb * orb_est.position.second;
+            double conf = std::min(0.98, 0.5 * (sift_est.confidence + orb_est.confidence) + 0.15);
+            return PositionEstimate({lat, lng}, conf, sift_est.best_match_idx);
+        }
+
+        // Disagree → trust SIFT (more robust descriptors)
+        return sift_est;
     }
 
-    // Get position estimates from all three methods
-    PositionEstimate template_result = template_estimator_.estimatePosition(
-        drone_view, reference_crops, last_position);
+    if (sift_ok) return sift_est;
+    if (orb_ok)  return orb_est;
 
-    PositionEstimate orb_result = orb_estimator_.estimatePosition(
-        drone_view, reference_crops, last_position);
-
-    PositionEstimate sift_result = sift_estimator_.estimatePosition(
-        drone_view, reference_crops, last_position);
-
-    // ==================== DECISION LOGIC ====================
-    
-    // 1. If template matching has very high confidence, trust it immediately
-    if (template_result.confidence > 0.85) {
-        return template_result;
-    }
-
-    // 2. Check for consensus among all three methods (very strong signal)
-    bool all_agree = (template_result.best_match_idx == orb_result.best_match_idx &&
-                      orb_result.best_match_idx == sift_result.best_match_idx &&
-                      template_result.best_match_idx != -1);
-    
-    if (all_agree) {
-        // All three methods agree - very high confidence
-        double avg_confidence = (template_result.confidence + 
-                                orb_result.confidence + 
-                                sift_result.confidence) / 3.0;
-        
-        PositionEstimate result = template_result;
-        result.confidence = std::min(0.98, avg_confidence + 0.15);  // Boost confidence
-        
-        std::cout << "✓ All methods agree on match " << result.best_match_idx 
-                  << " (confidence: " << result.confidence << ")" << std::endl;
-        return result;
-    }
-
-    // 3. Check for two-method consensus
-    int template_orb_match = (template_result.best_match_idx == orb_result.best_match_idx && 
-                             template_result.best_match_idx != -1) ? 1 : 0;
-    int template_sift_match = (template_result.best_match_idx == sift_result.best_match_idx && 
-                              template_result.best_match_idx != -1) ? 1 : 0;
-    int orb_sift_match = (orb_result.best_match_idx == sift_result.best_match_idx && 
-                         orb_result.best_match_idx != -1) ? 1 : 0;
-    
-    // Template + ORB agree with good confidence
-    if (template_orb_match && template_result.confidence > 0.55 && orb_result.confidence > 0.55) {
-        PositionEstimate result = template_result;
-        result.confidence = std::min(0.95, (template_result.confidence + orb_result.confidence) / 2.0 + 0.1);
-        return result;
-    }
-    
-    // Template + SIFT agree with good confidence
-    if (template_sift_match && template_result.confidence > 0.55 && sift_result.confidence > 0.55) {
-        PositionEstimate result = template_result;
-        result.confidence = std::min(0.95, (template_result.confidence + sift_result.confidence) / 2.0 + 0.1);
-        return result;
-    }
-    
-    // ORB + SIFT agree (feature-based consensus)
-    if (orb_sift_match && orb_result.confidence > 0.50 && sift_result.confidence > 0.50) {
-        // Average the feature-based results
-        PositionEstimate result = orb_result;
-        result.confidence = std::min(0.92, (orb_result.confidence + sift_result.confidence) / 2.0 + 0.08);
-        return result;
-    }
-
-    // 4. Individual method selection based on confidence thresholds
-    
-    // SIFT has very high confidence (SIFT is generally more reliable than ORB)
-    if (sift_result.confidence > 0.75) {
-        return sift_result;
-    }
-    
-    // ORB has high confidence and others are weak
-    if (orb_result.confidence > 0.70 && template_result.confidence < 0.5) {
-        return orb_result;
-    }
-    
-    // Template has good confidence
-    if (template_result.confidence > 0.60) {
-        return template_result;
-    }
-    
-    // SIFT has moderate confidence
-    if (sift_result.confidence > 0.55) {
-        return sift_result;
-    }
-    
-    // ORB has moderate confidence
-    if (orb_result.confidence > 0.50) {
-        return orb_result;
-    }
-    
-    // Template has moderate confidence
-    if (template_result.confidence > 0.40) {
-        return template_result;
-    }
-
-    // 5. Last resort: Select best of the three based on confidence
-    PositionEstimate best_result = template_result;
-    
-    if (orb_result.confidence > best_result.confidence) {
-        best_result = orb_result;
-    }
-    
-    if (sift_result.confidence > best_result.confidence) {
-        best_result = sift_result;
-    }
-    
-    // If all methods have very low confidence, log a warning
-    if (best_result.confidence < 0.3) {
-        std::cout << "⚠️  Warning: All methods have low confidence (best: " 
-                  << best_result.confidence << ")" << std::endl;
-    }
-    
-    return best_result;
+    // Both failed → coast on last known position with very low confidence
+    return PositionEstimate(last_position, 0.1, -1);
 }

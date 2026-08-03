@@ -6,180 +6,22 @@
 #include <cmath>
 #include <sstream>
 #include <iomanip>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include "FlightSimulation.hpp"
 #include "CoordinateUtils.hpp"
 #include "VideoProcessing.hpp"
 #include "GlobalLocator.hpp"
+#include "VideoPreprocessor.hpp"
+#include "MapUtils.hpp"
+#include "HaifaSamples.hpp"
+#include "GroundTruthAnnotator.hpp"
+#include "CameraModel.hpp"
+#include "TelemetryImporter.hpp"
+#include "DatasetVideoAssembler.hpp"
+#include "DatasetSamples.hpp"
 #include <fstream>
 
-// Write callback to collect binary data into a byte buffer
-size_t WriteToVector(void *contents, size_t size, size_t nmemb, void *userp)
-{
-    size_t total = size * nmemb;
-    auto *buf = static_cast<std::vector<unsigned char> *>(userp);
-    unsigned char *c = static_cast<unsigned char *>(contents);
-    buf->insert(buf->end(), c, c + total);
-    return total;
-}
-
-// Web Mercator meters-per-pixel at latitude phi (radians) and zoom z
-static double metersPerPixel(double lat_deg, int z)
-{
-    const double R = 6378137.0;
-    const double phi = lat_deg * M_PI / 180.0;
-    return std::cos(phi) * 2.0 * M_PI * R / (256.0 * std::pow(2.0, z));
-}
-
-// Choose an integer zoom so that the image spans approximately target_meters across
-static int chooseZoomForSpan(double lat_deg, double target_meters, int pixel_span)
-{
-    const double R = 6378137.0;
-    const double phi = lat_deg * M_PI / 180.0;
-    const double target_mpp = target_meters / pixel_span;
-    double z_real = std::log2(std::cos(phi) * 2.0 * M_PI * R / (256.0 * target_mpp));
-    int z = (int)std::round(z_real);
-    if (z < 0)
-        z = 0;
-    if (z > 21)
-        z = 21;
-    return z;
-}
-
-// Function to fetch map image using libcurl
-cv::Mat fetchMapImage(const std::string &url)
-{
-    CURL *curl = curl_easy_init();
-    if (!curl)
-    {
-        std::cerr << "Failed to init CURL\n";
-        return cv::Mat();
-    }
-
-    std::vector<unsigned char> buffer;
-    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteToVector);
-    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &buffer);
-    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-
-    CURLcode res = curl_easy_perform(curl);
-    long response_code = 0;
-    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response_code);
-    curl_easy_cleanup(curl);
-
-    if (res != CURLE_OK)
-    {
-        std::cerr << "curl_easy_perform() failed: " << curl_easy_strerror(res) << "\n";
-        return cv::Mat();
-    }
-
-    if (buffer.empty())
-    {
-        std::cerr << "Got empty image response\n";
-        return cv::Mat();
-    }
-
-    cv::Mat data_mat(1, static_cast<int>(buffer.size()), CV_8UC1, buffer.data());
-    cv::Mat img = cv::imdecode(data_mat, cv::IMREAD_COLOR);
-
-    if (img.empty())
-    {
-        std::cerr << "\n=== IMAGE FETCH ERROR ===\n";
-        std::cerr << "HTTP Status Code: " << response_code << "\n";
-        std::cerr << "Failed to decode image. The server likely returned an error message instead of an image.\n";
-
-        // NEW: Convert the raw buffer to a string and print it so we can read the Google API error
-        std::string error_msg(buffer.begin(), buffer.end());
-        std::cerr << "Raw Server Response:\n"
-                  << error_msg << "\n";
-        std::cerr << "=========================\n\n";
-    }
-
-    return img;
-}
-
-std::string readApiKey(const std::string &configPath = "config.ini")
-{
-    std::ifstream file(configPath);
-    if (!file.is_open())
-    {
-        std::cerr << "Error: Could not open config file at " << configPath << std::endl;
-        std::cerr << "Please copy config.ini.sample to config.ini and add your API key" << std::endl;
-        return "";
-    }
-
-    std::string line, key;
-    while (std::getline(file, line))
-    {
-        if (line.empty() || line[0] == '#' || line[0] == ';')
-        {
-            continue;
-        }
-
-        if (line[0] == '[')
-        {
-            continue;
-        }
-
-        size_t pos = line.find('=');
-        if (pos != std::string::npos)
-        {
-            std::string name = line.substr(0, pos);
-            std::string value = line.substr(pos + 1);
-
-            name.erase(0, name.find_first_not_of(" \t"));
-            name.erase(name.find_last_not_of(" \t") + 1);
-
-            if (name == "key")
-            {
-                return value;
-            }
-        }
-    }
-
-    std::cerr << "Error: API key not found in config file" << std::endl;
-    return "";
-}
-
-cv::Mat loadOrFetchMapImage(const std::string &filename, const std::string &url, bool verbose = true)
-{
-    // First, try to load from disk
-    cv::Mat img = cv::imread(filename);
-
-    if (!img.empty())
-    {
-        if (verbose)
-        {
-            std::cout << "✓ Loaded cached map: " << filename << std::endl;
-        }
-        return img;
-    }
-
-    // File doesn't exist, fetch from API
-    if (verbose)
-    {
-        std::cout << "⬇️  Fetching map from Google Maps API..." << std::endl;
-    }
-
-    img = fetchMapImage(url);
-
-    if (!img.empty())
-    {
-        cv::imwrite(filename, img);
-        if (verbose)
-        {
-            std::cout << "✓ Saved map to: " << filename << std::endl;
-        }
-    }
-    else
-    {
-        if (verbose)
-        {
-            std::cerr << "❌ Failed to fetch map from API" << std::endl;
-        }
-    }
-
-    return img;
-}
 
 struct PathConfig
 {
@@ -240,15 +82,18 @@ void processAndSimulatePath(
     std::vector<ReferenceCrop> crops;
     for (const auto &point : config.sample_points)
     {
+        // Convert lat/lng to pixel coordinates on the map
         cv::Point pt = CoordinateUtils::latLngToPixel(
             point.first, point.second,
             lat, lng, center_x, center_y, mpp,
             meters_per_degree_lat, meters_per_degree_lng);
-
+        
+        // Define crop rectangle centered on the point
         cv::Rect crop_rect(pt.x - crop_size / 2, pt.y - crop_size / 2,
                            crop_size, crop_size);
         crop_rect = crop_rect & cv::Rect(0, 0, clean_map.cols, clean_map.rows);
-
+        
+        // Only add valid crops that have a positive area
         if (crop_rect.width > 0 && crop_rect.height > 0)
         {
             cv::Mat cropped = clean_map(crop_rect).clone();
@@ -288,7 +133,514 @@ void processAndSimulatePath(
     runDroneSimulation(clean_map, crops, config.waypoints,
                        meters_per_degree_lat, meters_per_degree_lng,
                        lat, lng, center_x, center_y, mpp, algorithm,
-                       location, path_type); // 🆕 PASS NEW PARAMETERS
+                       location, path_type);
+}
+
+// Shared state for the interactive start-position selector
+struct MapSelectionData {
+    cv::Mat  map_base;         // unmodified map (used to redraw on each click)
+    cv::Mat  map_display;      // displayed copy (gets redrawn)
+    cv::Point selected_pixel;
+    cv::Point suggested_pixel; // GlobalLocator estimate (-1,-1 if none)
+    double   mpp;
+    int      box_size_px;      // pixels representing ~300 m on this map
+    bool     confirmed = false;
+    bool     has_suggestion = false;
+};
+
+static void onMapMouseClick(int event, int x, int y, int /*flags*/, void* userdata)
+{
+    MapSelectionData* d = static_cast<MapSelectionData*>(userdata);
+    if (event != cv::EVENT_LBUTTONDOWN) return;
+
+    d->selected_pixel = cv::Point(x, y);
+    d->confirmed      = true;
+
+    // Redraw from base so old boxes don't accumulate
+    d->map_display = d->map_base.clone();
+
+    // Draw suggestion (green) if it exists
+    if (d->has_suggestion) {
+        cv::circle(d->map_display, d->suggested_pixel, 8,  cv::Scalar(0, 220, 0), -1);
+        cv::circle(d->map_display, d->suggested_pixel, 10, cv::Scalar(0, 0, 0),   2);
+        cv::putText(d->map_display, "GL estimate",
+                    cv::Point(d->suggested_pixel.x + 12, d->suggested_pixel.y + 5),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 220, 0), 1);
+    }
+
+    // Draw selected box (yellow) and centre dot (cyan)
+    int half = d->box_size_px / 2;
+    cv::Rect box(x - half, y - half, d->box_size_px, d->box_size_px);
+    cv::Rect map_rect(0, 0, d->map_display.cols, d->map_display.rows);
+    cv::rectangle(d->map_display, box & map_rect, cv::Scalar(0, 255, 255), 2);
+    cv::circle(d->map_display, d->selected_pixel, 5, cv::Scalar(255, 255, 0), -1);
+
+    cv::putText(d->map_display,
+                "SELECTED - press ENTER to confirm, click again to move",
+                cv::Point(10, d->map_display.rows - 12),
+                cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(0, 255, 255), 1);
+
+    cv::imshow("Select Start Position", d->map_display);
+    std::cout << "  Selected pixel (" << x << "," << y << ") -- press ENTER to confirm or click again." << std::endl;
+}
+
+// Show the satellite map and let the user click to choose the drone's starting position.
+// @param suggested  Optional GlobalLocator estimate; shown as a green dot.
+//                   Pass {0,0} if unavailable.
+// @return           Lat/lng of the user-selected point (or map centre on 'Q'/Escape).
+std::pair<double, double> manuallySelectStart(
+    const cv::Mat&               map,
+    double center_lat,           double center_lng,
+    int    center_x,             int    center_y,
+    double mpp,
+    double m_per_deg_lat,        double m_per_deg_lng,
+    std::pair<double,double>     suggested = {0.0, 0.0})
+{
+    MapSelectionData data;
+    data.map_base    = map.clone();
+    data.map_display = map.clone();
+    data.mpp         = mpp;
+    data.box_size_px = std::max(4, static_cast<int>(300.0 / mpp));
+
+    // Mark GlobalLocator suggestion in green
+    if (suggested.first != 0.0 || suggested.second != 0.0) {
+        cv::Point sp = CoordinateUtils::latLngToPixel(
+            suggested.first, suggested.second,
+            center_lat, center_lng, center_x, center_y,
+            mpp, m_per_deg_lat, m_per_deg_lng);
+        data.suggested_pixel = sp;
+        data.has_suggestion  = true;
+
+        cv::circle(data.map_display, sp, 8,  cv::Scalar(0, 220, 0), -1);
+        cv::circle(data.map_display, sp, 10, cv::Scalar(0, 0, 0),   2);
+        cv::putText(data.map_display, "GL estimate",
+                    cv::Point(sp.x + 12, sp.y + 5),
+                    cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 220, 0), 1);
+    }
+
+    cv::putText(data.map_display,
+                "Click = set start | ENTER = accept GL estimate | Q/Esc = use map centre",
+                cv::Point(10, 22), cv::FONT_HERSHEY_SIMPLEX, 0.5,
+                cv::Scalar(255, 255, 255), 1);
+
+    const std::string WIN = "Select Start Position";
+    cv::namedWindow(WIN, cv::WINDOW_NORMAL);
+    cv::resizeWindow(WIN, 1000, 1000);
+    cv::imshow(WIN, data.map_display);
+    cv::setMouseCallback(WIN, onMapMouseClick, &data);
+
+    std::cout << "\n=== START POSITION SELECTOR ===" << std::endl;
+    if (data.has_suggestion)
+        std::cout << "  Green dot = GlobalLocator estimate ("
+                  << suggested.first << ", " << suggested.second << ")" << std::endl;
+    std::cout << "  LEFT-CLICK to place start, ENTER to accept GL estimate, Q to skip." << std::endl;
+
+    // Event loop: poll until user presses Enter (confirm click), Q/Esc (skip), or clicks
+    while (true) {
+        int key = cv::waitKey(50) & 0xFF;
+
+        // Enter / Return → accept: either clicked position or GL suggestion
+        if (key == 13 || key == 10) {
+            if (data.confirmed) break;          // clicked somewhere → use that
+            if (data.has_suggestion) {          // no click, but GL exists → accept it
+                data.selected_pixel = data.suggested_pixel;
+                data.confirmed = true;
+                break;
+            }
+            // Nothing to accept → use map centre
+            break;
+        }
+        // Q or Escape → use map centre
+        if (key == 'q' || key == 'Q' || key == 27) break;
+    }
+
+    cv::destroyWindow(WIN);
+
+    if (data.confirmed) {
+        auto pos = CoordinateUtils::pixelToLatLng(
+            data.selected_pixel.x, data.selected_pixel.y,
+            center_lat, center_lng, center_x, center_y,
+            mpp, m_per_deg_lat, m_per_deg_lng);
+        std::cout << "  Start position set to (" << pos.first << ", " << pos.second << ")" << std::endl;
+        return pos;
+    }
+
+    std::cout << "  No selection — using map centre (" << center_lat << ", " << center_lng << ")" << std::endl;
+    return {center_lat, center_lng};
+}
+
+// Shared by any pipeline that already has a geo-referenced reference map and a
+// GSD-normalized video to match against it: builds the reference crop grid,
+// resolves a starting position (ground truth if available, else GlobalLocator +
+// manual selection), and runs processVideoNavigation. Used by both the Haifa
+// pipeline (map fetched live from Google Maps) and the telemetry-labeled
+// dataset pipeline (map pre-converted from the dataset's own GeoTIFF) below,
+// which differ only in how ref_map/center_lat/center_lng/mpp are obtained --
+// that acquisition step stays in each pipeline's own thin wrapper function.
+void runReferenceMatchingPipeline(
+    const std::string& video_path,
+    const std::string& location_name,
+    const std::string& sample_name,
+    const cv::Mat& ref_map,
+    double center_lat, double center_lng,
+    int center_x, int center_y,
+    double mpp, double m_per_deg_lat, double m_per_deg_lng,
+    double video_frame_gsd,
+    PositionAlgorithm algorithm,
+    const cv::Mat& feature_mask,
+    int frame_skip = 3,
+    const std::vector<double>* frame_times_sec = nullptr,
+    int grid_spacing_meters = 50,
+    int start_frame_idx_override = -1)
+{
+    // ------------------------------------------------------------------
+    // Reference crop grid for ORB/SIFT/Hybrid
+    // ------------------------------------------------------------------
+    std::cout << "Generating reference crop grid (" << grid_spacing_meters << " m spacing, "
+              << kReferenceCropMeters << " m crops)..." << std::endl;
+    std::vector<ReferenceCrop> crops = generateReferenceCropsGrid(
+        ref_map, center_lat, center_lng, center_x, center_y,
+        mpp, m_per_deg_lat, m_per_deg_lng, grid_spacing_meters, kReferenceCropMeters);
+
+    // ------------------------------------------------------------------
+    // Starting position.
+    //
+    // If a ground-truth CSV already exists for this sample, its
+    // earliest-frame point is a verified position -- use it directly
+    // and skip GlobalLocator + manual selection entirely. Re-deriving
+    // the start automatically (GlobalLocator, often inaccurate here)
+    // or manually (imprecise, different every run) would only add
+    // init-position noise to the very thing under test: per-frame
+    // matching accuracy. Falls back to the normal flow otherwise.
+    // ------------------------------------------------------------------
+    InitializationData init = readGroundTruthStart(sample_name);
+    if (init.success) {
+        std::cout << "Using ground-truth start position (frame "
+                  << init.frame_index << "): ("
+                  << init.coordinates.first << ", "
+                  << init.coordinates.second
+                  << ") -- skipping GlobalLocator and manual selection."
+                  << std::endl;
+    } else {
+        std::cout << "No ground truth found for " << sample_name
+                  << " -- running GlobalLocator (multi-scale edge matching)..."
+                  << std::endl;
+        init = GlobalLocator::findStartingPosition(
+            video_path, ref_map,
+            center_lat, center_lng, center_x, center_y,
+            mpp, m_per_deg_lat, m_per_deg_lng,
+            /*frame_skip=*/10, feature_mask);
+
+        if (!init.success) {
+            std::cerr << "GlobalLocator failed for " << sample_name << std::endl;
+            init.coordinates = {0.0, 0.0};  // sentinel — no suggestion
+            init.frame_index = 0;
+        } else {
+            std::cout << "GlobalLocator estimate: ("
+                      << init.coordinates.first << ", "
+                      << init.coordinates.second << ") at frame "
+                      << init.frame_index << std::endl;
+        }
+
+        // Manual start-position selector: shows satellite map + the
+        // GlobalLocator estimate (green dot if found). User can click
+        // to override or press ENTER to accept the suggestion.
+        std::pair<double,double> manual_pos = manuallySelectStart(
+            ref_map,
+            center_lat, center_lng,
+            center_x, center_y,
+            mpp, m_per_deg_lat, m_per_deg_lng,
+            init.coordinates);   // {0,0} if GL failed → no suggestion shown
+
+        // If user made a valid selection, use it; otherwise fall back to GL or centre
+        if (manual_pos.first != 0.0 || manual_pos.second != 0.0)
+            init.coordinates = manual_pos;
+        else if (!init.success)
+            init.coordinates = {center_lat, center_lng};
+    }
+
+    // ------------------------------------------------------------------
+    // Navigation with selected algorithm
+    //
+    // start_frame_idx_override lets a caller begin processing partway
+    // through the video while still seeding the Kalman filter with
+    // ground truth's earliest-frame position (init.coordinates) -- that
+    // position is real GPS data, accurate regardless of which frame
+    // processing actually starts at. Used for diagnostic batch runs that
+    // want to sample frames spread across a flight without being anchored
+    // to frame 0.
+    // ------------------------------------------------------------------
+    int effective_start_frame_idx = start_frame_idx_override >= 0
+        ? start_frame_idx_override : init.frame_index;
+
+    processVideoNavigation(
+        video_path, ref_map, crops,
+        center_lat, center_lng, center_x, center_y,
+        mpp, m_per_deg_lat, m_per_deg_lng,
+        algorithm,
+        location_name, sample_name,
+        video_frame_gsd,
+        frame_skip,
+        init.coordinates, effective_start_frame_idx,
+        /*x_offset=*/0, /*y_offset=*/0,
+        feature_mask,
+        frame_times_sec);
+}
+
+// Runs the full video-navigation pipeline for one Haifa sample: preprocessing
+// (mask, altitude, camera angle) -> altitude-derived GSD -> live satellite map
+// fetch from Google Maps -> runReferenceMatchingPipeline() above.
+//
+// Templated on the config type (rather than hardcoded to HaifaSampleConfig) so
+// another Google-Maps-backed sample source could reuse this body, as long as it
+// exposes the same fields consumed below: video_path, sample_name,
+// location_name, center_lat, center_lng. A dataset that brings its OWN
+// pre-referenced map (no live fetch) is NOT a fit for this function -- see
+// runDatasetPipelineForSample() below instead.
+template <typename SampleConfig>
+void runVideoPipelineForSample(const SampleConfig& cfg,
+                                const std::string& apiKey,
+                                PositionAlgorithm algorithm)
+{
+    const int    width_haifa      = 640;
+    const int    height_haifa     = 640;
+    const int    scale_haifa      = 2;
+    const int    effective_px     = width_haifa * scale_haifa;
+    const double target_span_m    = 1500.0;
+
+    std::cout << "\n" << std::string(60, '-') << std::endl;
+    std::cout << "Processing: " << cfg.video_path << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
+
+    // ------------------------------------------------------------------
+    // STEP 1: Video preprocessing — mask, altitude, camera angle
+    // ------------------------------------------------------------------
+    std::string preproc_out = "Videos/preprocessed_" + cfg.sample_name + ".avi";
+    VideoPreprocessor preprocessor(cfg.video_path, preproc_out, "masks");
+    VideoMetadata meta = preprocessor.process(/*frame_skip=*/3);
+
+    if (meta.total_frames == 0) {
+        std::cerr << "Could not open video, skipping: " << cfg.video_path << std::endl;
+        return;
+    }
+
+    cv::Mat feature_mask = meta.feature_mask;
+
+    // ------------------------------------------------------------------
+    // STEP 2: Altitude-derived scale.
+    //
+    // video_frame_gsd (metres/pixel of the RAW video frame) is needed
+    // so processVideoNavigation can resize its per-frame crop to the
+    // same ground-sample-distance as the reference crops before
+    // ORB/SIFT/Hybrid matching -- without this the two images being
+    // matched can represent wildly different real-world footprints.
+    //
+    // If the interactive altitude step was skipped, fall back to a
+    // typical broadcast/survey-drone altitude so matching still has a
+    // sane scale to work with (degraded accuracy, not a crash) --
+    // and warn, since a real estimate is what fixes this properly.
+    // ------------------------------------------------------------------
+    constexpr double kFallbackAltitudeM  = 120.0;
+
+    double altitude_m = meta.estimated_mean_altitude;
+    if (altitude_m <= 0.0) {
+        altitude_m = kFallbackAltitudeM;
+        std::cerr << "  No altitude estimate for " << cfg.sample_name
+                  << " -- falling back to " << kFallbackAltitudeM
+                  << "m. Re-run the preprocessor and complete the "
+                  << "altitude step for a real estimate." << std::endl;
+    }
+    double frame_footprint_m = CameraModel::frameFootprintMeters(altitude_m);
+    double video_frame_gsd   = CameraModel::groundSampleDistance(altitude_m, meta.width);
+
+    // Map fetching: zoom level chosen from the (real, not fallback)
+    // altitude estimate if available; falls back to 1500m span target.
+    double span_m = target_span_m;
+    if (meta.estimated_mean_altitude > 0) {
+        // Fetch a map that is ~3x the estimated drone footprint width
+        // so GlobalLocator has room to search
+        span_m = frame_footprint_m * 3.0;
+        std::cout << "Altitude estimate: " << meta.estimated_mean_altitude
+                  << " m  -> map span: " << span_m << " m" << std::endl;
+    }
+
+    int zoom = chooseZoomForSpan(cfg.center_lat, span_m, effective_px);
+    double mpp = metersPerPixel(cfg.center_lat, zoom);
+    const double lat_rad = cfg.center_lat * M_PI / 180.0;
+    const double m_per_deg_lat = 111320.0;
+    const double m_per_deg_lng = 111320.0 * std::cos(lat_rad);
+
+    // Build the Google Maps API URL for this area
+    std::ostringstream map_url;
+    map_url << "https://maps.googleapis.com/maps/api/staticmap?"
+            << "center=" << cfg.center_lat << "," << cfg.center_lng
+            << "&zoom=" << zoom
+            << "&size=" << width_haifa << "x" << height_haifa
+            << "&maptype=satellite&scale=" << scale_haifa
+            << "&key=" << apiKey;
+
+    // Include zoom in filename so a new altitude estimate triggers a fresh fetch
+    std::string map_cache_path = "Images/map_clean_" + cfg.location_name
+                                 + "_z" + std::to_string(zoom) + ".png";
+    cv::Mat ref_map = loadOrFetchMapImage(map_cache_path, map_url.str());
+    if (ref_map.empty()) {
+        std::cerr << "Failed to load map for " << cfg.sample_name << ", skipping." << std::endl;
+        return;
+    }
+
+    runReferenceMatchingPipeline(
+        cfg.video_path, cfg.location_name, cfg.sample_name,
+        ref_map, cfg.center_lat, cfg.center_lng, effective_px/2, effective_px/2,
+        mpp, m_per_deg_lat, m_per_deg_lng,
+        video_frame_gsd, algorithm, feature_mask, /*frame_skip=*/3);
+}
+
+// Runs the full pipeline for one telemetry-labeled dataset sample (see
+// DatasetSamples.hpp). Differs from runVideoPipelineForSample() (Haifa) in
+// exactly the two places that genuinely differ for this data source:
+//   - the video doesn't exist yet -- it's assembled once from the dataset's
+//     ordered drone images (DatasetVideoAssembler)
+//   - the reference map is pre-converted from the dataset's own GeoTIFF and
+//     geo-referenced from its own bounding-box CSV, not fetched live from
+//     Google Maps
+// Both real per-frame altitude (skips VideoPreprocessor's interactive
+// line-draw entirely, via the same altitude-cache file it already checks)
+// and real per-frame capture times (fed to processVideoNavigation's
+// frame_times_sec, since this dataset's capture intervals are NOT constant --
+// survey-flight turnarounds take far longer between frames) come from the
+// dataset's own telemetry instead of being estimated or assumed. Everything
+// after that -- reference crop grid, starting position, matching -- is the
+// same shared runReferenceMatchingPipeline() Haifa uses.
+void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
+                                  PositionAlgorithm algorithm)
+{
+    std::cout << "\n" << std::string(60, '-') << std::endl;
+    std::cout << "Processing dataset sample: " << cfg.sample_name << std::endl;
+    std::cout << std::string(60, '-') << std::endl;
+
+    mkdir("Videos",    0755);
+    mkdir("CSV Files", 0755);
+    mkdir("masks",     0755);
+
+    // ------------------------------------------------------------------
+    // STEP 1: Import telemetry -> ground_truth_<sample>.csv (real GPS,
+    // replacing manual annotation entirely) + telemetry_<sample>.csv
+    // (dense per-frame altitude/heading).
+    // ------------------------------------------------------------------
+    TelemetryImportResult telemetry = importUavVisLocTelemetry(cfg.telemetry_csv, cfg.sample_name);
+    if (!telemetry.success) {
+        std::cerr << "Failed to import telemetry for " << cfg.sample_name << ", skipping." << std::endl;
+        return;
+    }
+
+    // ------------------------------------------------------------------
+    // STEP 2: Assemble the ordered images into a synthetic video, so
+    // VideoPreprocessor and processVideoNavigation's cv::VideoCapture-based
+    // frame loop work unchanged (see DatasetVideoAssembler.hpp -- this
+    // video's own fps is nominal only, real timing comes from telemetry).
+    // ------------------------------------------------------------------
+    if (!assembleDatasetVideo(cfg.image_dir, cfg.image_prefix, cfg.frame_count, cfg.video_path)) {
+        std::cerr << "Failed to assemble video for " << cfg.sample_name << ", skipping." << std::endl;
+        return;
+    }
+
+    // ------------------------------------------------------------------
+    // STEP 3: Pre-seed VideoPreprocessor's altitude cache with the real
+    // telemetry altitude, so its interactive line-draw step is skipped
+    // entirely (same cache file/mechanism it already uses for Haifa's
+    // manual estimate -- see VideoPreprocessor.cpp). Only written if not
+    // already cached, so a manual override (if ever needed) isn't clobbered.
+    // ------------------------------------------------------------------
+    std::string stem = cfg.video_path;
+    for (char& c : stem) if (c == '/' || c == '\\' || c == ' ') c = '_';
+    std::string altitude_cache_path = "masks/" + stem + "_altitude.txt";
+    {
+        std::ifstream existing(altitude_cache_path);
+        if (!existing.good()) {
+            std::ofstream out(altitude_cache_path);
+            out << telemetry.mean_altitude_m;
+        }
+    }
+
+    // Same idea for VideoPreprocessor's mask cache: these are clean aerial
+    // survey photos (no HUD/logo/subtitle overlays like Haifa's broadcast
+    // footage), so "exclude nothing" (all 255) is the actually-correct mask
+    // here, not just an automation shortcut -- pre-seeding it skips the
+    // interactive mask editor the same way the altitude cache above skips
+    // the interactive altitude line-draw.
+    std::string mask_cache_path = "masks/" + stem + "_mask.png";
+    {
+        std::ifstream existing(mask_cache_path);
+        if (!existing.good()) {
+            cv::VideoCapture probe(cfg.video_path);
+            cv::Mat first_frame;
+            if (probe.isOpened() && probe.read(first_frame)) {
+                cv::Mat blank_mask(first_frame.size(), CV_8UC1, cv::Scalar(255));
+                cv::imwrite(mask_cache_path, blank_mask);
+            }
+        }
+    }
+
+    std::string preproc_out = "Videos/preprocessed_" + cfg.sample_name + ".avi";
+    VideoPreprocessor preprocessor(cfg.video_path, preproc_out, "masks");
+    VideoMetadata meta = preprocessor.process(/*frame_skip=*/1);
+
+    if (meta.total_frames == 0) {
+        std::cerr << "Could not open assembled video, skipping: " << cfg.video_path << std::endl;
+        return;
+    }
+
+    cv::Mat feature_mask = meta.feature_mask;
+
+    double altitude_m = meta.estimated_mean_altitude > 0 ? meta.estimated_mean_altitude
+                                                          : telemetry.mean_altitude_m;
+    double video_frame_gsd = CameraModel::groundSampleDistance(altitude_m, meta.width);
+
+    // ------------------------------------------------------------------
+    // STEP 4: Load the pre-converted local satellite map and geo-reference
+    // it from the dataset's own bounding-box CSV (see
+    // scripts/convert_uavvisloc_satellite.py) -- no Google Maps fetch.
+    // ------------------------------------------------------------------
+    SatelliteBounds bounds = readUavVisLocSatelliteBounds(cfg.coords_csv, cfg.map_name);
+    if (!bounds.success) {
+        std::cerr << "No bounding box for " << cfg.map_name << " in " << cfg.coords_csv
+                  << ", skipping." << std::endl;
+        return;
+    }
+
+    cv::Mat ref_map = cv::imread(cfg.satellite_png);
+    if (ref_map.empty()) {
+        std::cerr << "Failed to load " << cfg.satellite_png
+                  << " -- run scripts/convert_uavvisloc_satellite.py first, skipping." << std::endl;
+        return;
+    }
+
+    double center_lat = (bounds.lt_lat + bounds.rb_lat) / 2.0;
+    double center_lng = (bounds.lt_lon + bounds.rb_lon) / 2.0;
+    const double lat_rad = center_lat * M_PI / 180.0;
+    const double m_per_deg_lat = 111320.0;
+    const double m_per_deg_lng = 111320.0 * std::cos(lat_rad);
+    double width_m  = (bounds.rb_lon - bounds.lt_lon) * m_per_deg_lng;
+    double height_m = (bounds.lt_lat - bounds.rb_lat) * m_per_deg_lat;
+    double mpp = ((width_m / ref_map.cols) + (height_m / ref_map.rows)) / 2.0;
+
+    // ------------------------------------------------------------------
+    // STEP 5: Real per-frame capture times -> Kalman filter's dt, instead
+    // of the constant frame_skip/fps every other pipeline here uses.
+    // ------------------------------------------------------------------
+    std::vector<double> frame_times_sec = loadTelemetryFrameTimes(cfg.sample_name);
+
+    // UAV-VisLoc's map covers a much larger real-world area (~7-9km) than
+    // Haifa's (~1.5km), so the default 50m grid spacing would generate tens
+    // of thousands of reference crops -- 200m keeps the crop count in the
+    // same rough ballpark as Haifa's while still giving ORB/SIFT/Hybrid a
+    // dense enough search grid.
+    runReferenceMatchingPipeline(
+        cfg.video_path, cfg.location_name, cfg.sample_name,
+        ref_map, center_lat, center_lng, ref_map.cols / 2, ref_map.rows / 2,
+        mpp, m_per_deg_lat, m_per_deg_lng,
+        video_frame_gsd, algorithm, feature_mask,
+        /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/200);
 }
 
 int main(int argc, char **argv)
@@ -297,21 +649,25 @@ int main(int argc, char **argv)
     bool run_jerusalem = true;
     bool run_manhattan = true;
     bool run_haifa = true;
+    // Telemetry-labeled dataset validation pipeline (see DatasetSamples.hpp) --
+    // opt-in only via an explicit "d" 2nd arg, never part of the j+m+h default,
+    // since it needs its own Datasets/ files and doesn't share a Google Maps key.
+    bool run_dataset = false;
     if (argc > 1)
     {
         std::string algo_str = argv[1];
-        if (algo_str == "template" || algo_str == "TEMPLATE")
-            algorithm = PositionAlgorithm::TEMPLATE;
-        else if (algo_str == "orb" || algo_str == "ORB")
+        if (algo_str == "orb" || algo_str == "ORB")
             algorithm = PositionAlgorithm::ORB;
         else if (algo_str == "sift" || algo_str == "SIFT")
             algorithm = PositionAlgorithm::SIFT;
-        else if (algo_str == "surf" || algo_str == "SURF")
-            algorithm = PositionAlgorithm::SURF;
-        else if (algo_str == "smoothed" || algo_str == "SMOOTHED")
-            algorithm = PositionAlgorithm::SMOOTHED;
         else if (algo_str == "hybrid" || algo_str == "HYBRID")
             algorithm = PositionAlgorithm::HYBRID;
+        else if (algo_str == "optical_flow" || algo_str == "OPTICAL_FLOW")
+            algorithm = PositionAlgorithm::OPTICAL_FLOW;
+        else if (algo_str == "akaze" || algo_str == "AKAZE")
+            algorithm = PositionAlgorithm::AKAZE;
+        else
+            std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }
     if (argc > 2)
     {
@@ -323,21 +679,38 @@ int main(int argc, char **argv)
             run_manhattan = true;
         else if (sim_str == "h")
             run_haifa = true;
+        else if (sim_str == "d")
+            run_dataset = true;
         else
             run_jerusalem = run_manhattan = run_haifa = true;
     }
-    const std::string apiKey = readApiKey();
-    if (apiKey.empty())
+    // Optional 4th arg: restrict the Haifa loop to a single sample (1-3),
+    // for fast iterative testing instead of re-running all three every time.
+    int haifa_sample_filter = 0; // 0 = all samples
+    if (argc > 3)
+        haifa_sample_filter = std::atoi(argv[3]);
+
+    // Only Jerusalem/Manhattan/Haifa fetch live Google Maps imagery -- the
+    // dataset pipeline brings its own pre-converted reference map, so a
+    // dataset-only run shouldn't require config.ini to exist at all.
+    std::string apiKey;
+    if (run_jerusalem || run_manhattan || run_haifa)
     {
-        std::cerr << "Failed to read API key. Please check your config.ini file." << std::endl;
-        return 1;
+        apiKey = readApiKey();
+        if (apiKey.empty())
+        {
+            std::cerr << "Failed to read API key. Please check your config.ini file." << std::endl;
+            return 1;
+        }
     }
 
-    const int width = 640;
+    // Google Static Maps API max size per image is 640x640 at scale=2, which gives us an effective 1280x1280 map to work with
+    const int width = 640; 
     const int height = 640;
     const int scale = 2;
     const std::string maptype = "satellite";
 
+    // We want to cover a span of approximately 1000 meters across the width of the image
     const double target_span_m = 1000.0;
     const int effective_px = width * scale;
     const double path_length_m = 350.0;
@@ -583,135 +956,45 @@ int main(int argc, char **argv)
     // ==================== HAIFA VIDEO-BASED NAVIGATION ====================
     if (run_haifa)
     {
-        std::cout << "\n"
-                  << std::string(80, '=') << std::endl;
-        std::cout << "🚢 HAIFA PORT - VIDEO-BASED NAVIGATION" << std::endl;
+        std::cout << "\n" << std::string(80, '=') << std::endl;
+        std::cout << "HAIFA PORT - VIDEO NAVIGATION PIPELINE" << std::endl;
         std::cout << std::string(80, '=') << std::endl;
 
-        const double lat_haifa = 32.8270; // MOVED NORTH (was 32.8184)
-        const double lng_haifa = 34.9901; // MOVED WEST (was 35.0000)
-        const int width_haifa = 640;
-        const int height_haifa = 640;
-        const int scale_haifa = 2;
-        const std::string maptype_haifa = "satellite";
+        // ---- Per-sample configuration ----
+        // Shared with the GroundTruth annotation tool -- see HaifaSamples.hpp.
+        std::vector<HaifaSampleConfig> haifa_samples = getHaifaSamples();
 
-        const double target_span_m_haifa = 4000.0; // Larger area to cover the port and surroundings
-        const int effective_px_haifa = width_haifa * scale_haifa;
-        int zoom_haifa = chooseZoomForSpan(lat_haifa, target_span_m_haifa, effective_px_haifa);
+        mkdir("Videos",    0755);
+        mkdir("CSV Files", 0755);
+        mkdir("masks",     0755);
 
-        const double lat_radians_haifa = lat_haifa * M_PI / 180.0;
-        const double meters_per_degree_lat_haifa = 111320.0;
-        const double meters_per_degree_lng_haifa = 111320.0 * std::cos(lat_radians_haifa);
-
-        double mpp_haifa = metersPerPixel(lat_haifa, zoom_haifa);
-        double span_m_haifa = mpp_haifa * effective_px_haifa;
-        std::cout << "Haifa - Chosen zoom=" << zoom_haifa
-                  << " → mpp=" << mpp_haifa
-                  << " → width span ≈ " << span_m_haifa << " m\n";
-
-        std::ostringstream clean_url_ss_haifa;
-        clean_url_ss_haifa << "https://maps.googleapis.com/maps/api/staticmap?"
-                           << "center=" << lat_haifa << "," << lng_haifa
-                           << "&zoom=" << zoom_haifa
-                           << "&size=" << width_haifa << "x" << height_haifa
-                           << "&maptype=" << maptype_haifa
-                           << "&scale=" << scale_haifa
-                           << "&key=" << apiKey;
-
-        cv::Mat clean_map_haifa = loadOrFetchMapImage(
-            "Images/map_clean_haifa.png",
-            clean_url_ss_haifa.str());
-
-        if (clean_map_haifa.empty())
+        for (const auto& cfg : haifa_samples)
         {
-            std::cerr << "Failed to load Haifa map\n";
-            return 1;
+            if (haifa_sample_filter > 0 &&
+                cfg.sample_name != ("sample" + std::to_string(haifa_sample_filter)))
+                continue;
+
+            runVideoPipelineForSample(cfg, apiKey, algorithm);
         }
 
-        double pixels_per_100m_haifa = 100.0 / mpp_haifa;
-        int crop_size_haifa = static_cast<int>(std::round(pixels_per_100m_haifa));
-        int center_x_haifa = (width_haifa * scale_haifa) / 2;
-        int center_y_haifa = (height_haifa * scale_haifa) / 2;
+        std::cout << "\n" << std::string(80, '=') << std::endl;
+        std::cout << "ALL HAIFA VIDEO MISSIONS COMPLETE!" << std::endl;
+        std::cout << std::string(80, '=') << std::endl;
+    }
 
-        // Display map for verification
-        cv::namedWindow("Haifa Clean Map", cv::WINDOW_NORMAL);
-        cv::imshow("Haifa Clean Map", clean_map_haifa);
-        std::cout << "Press any key to continue to Haifa video processing..." << std::endl;
-        cv::waitKey(0);
+    // ==================== TELEMETRY-LABELED DATASET VALIDATION ====================
+    if (run_dataset)
+    {
+        std::cout << "\n" << std::string(80, '=') << std::endl;
+        std::cout << "TELEMETRY-LABELED DATASET VALIDATION PIPELINE" << std::endl;
+        std::cout << std::string(80, '=') << std::endl;
 
-        // Generate multi-scale reference crops
-        std::cout << "\n🗂️  Generating multi-scale reference crop database..." << std::endl;
+        std::vector<DatasetSampleConfig> dataset_samples = getDatasetSamples();
+        for (const auto& cfg : dataset_samples)
+            runDatasetPipelineForSample(cfg, algorithm);
 
-        // SINGLE DECLARATION of haifa_crops
-        std::vector<ReferenceCrop> haifa_crops;
-        std::vector<int> scales = {250, 350, 500}; // meters - different altitudes
-
-        for (int scale : scales)
-        {
-            std::cout << "   Generating crops at " << scale << "m scale..." << std::endl;
-            auto crops_at_scale = generateReferenceCropsGrid(
-                clean_map_haifa, lat_haifa, lng_haifa,
-                center_x_haifa, center_y_haifa, mpp_haifa,
-                meters_per_degree_lat_haifa, meters_per_degree_lng_haifa,
-                scale / 2, // grid spacing = half the crop size for overlap
-                scale      // crop size
-            );
-            haifa_crops.insert(haifa_crops.end(), crops_at_scale.begin(), crops_at_scale.end());
-        }
-
-        std::cout << "✓ Reference database ready with " << haifa_crops.size() << " crops" << std::endl;
-
-        // Rest of the code stays the same...
-
-        // Check video files
-        std::vector<std::string> video_files = {
-            "Haifa Samples/Sample 1.mp4",
-            "Haifa Samples/Sample 2.mp4"};
-
-        std::vector<std::string> video_names = {"sample1", "sample2"};
-
-        // Process each video autonomously
-        for (size_t i = 0; i < video_files.size(); i++)
-        {
-            std::cout << "\n======================================================\n";
-            std::cout << "🚀 STARTING AUTONOMOUS MISSION: " << video_files[i] << "\n";
-            std::cout << "======================================================\n";
-
-            // 1. FREEZE VIDEO AND SEEK FIRST VALID FRAME
-            InitializationData init_data = GlobalLocator::findStartingPosition(
-                video_files[i], 
-                haifa_crops, 
-                8, // threads
-                10 // Skip 10 frames at a time to search faster
-            );
-
-            if (!init_data.success) {
-                std::cerr << "Mission Aborted: Initialization failed for " << video_files[i] << std::endl;
-                continue; // Skip to the next video
-            }
-
-            // 2. RUN REAL-TIME SIMULATION
-            // Note: We need to modify processVideoNavigation to accept the starting frame index!
-            processVideoNavigation(
-                video_files[i],
-                clean_map_haifa,
-                haifa_crops,
-                lat_haifa, lng_haifa,
-                center_x_haifa, center_y_haifa,
-                mpp_haifa,
-                meters_per_degree_lat_haifa, meters_per_degree_lng_haifa,
-                algorithm,
-                "haifa",
-                video_names[i],
-                3, // frame_skip
-                init_data.coordinates,
-                init_data.frame_index // <--- PASS THE STARTING FRAME HERE
-            );
-        }
-
-        std::cout << "\n"
-                  << std::string(80, '=') << std::endl;
-        std::cout << "🎉 ALL VIDEO PROCESSING COMPLETE!" << std::endl;
+        std::cout << "\n" << std::string(80, '=') << std::endl;
+        std::cout << "ALL DATASET SAMPLES COMPLETE!" << std::endl;
         std::cout << std::string(80, '=') << std::endl;
     }
 

@@ -11,7 +11,7 @@ size_t WriteToVector(void *contents, size_t size, size_t nmemb, void *userp)
 }
 
 // Choose an integer zoom so that the image spans approximately target_meters across
-static int chooseZoomForSpan(double lat_deg, double target_meters, int pixel_span)
+int chooseZoomForSpan(double lat_deg, double target_meters, int pixel_span)
 {
     const double R = 6378137.0;
     const double phi = lat_deg * M_PI / 180.0;
@@ -77,7 +77,7 @@ cv::Mat fetchMapImage(const std::string &url)
 }
 
 
-std::string readApiKey(const std::string& configPath = "config.ini") {
+std::string readApiKey(const std::string& configPath) {
     std::ifstream file(configPath);
     if (!file.is_open()) {
         std::cerr << "Error: Could not open config file at " << configPath << std::endl;
@@ -114,14 +114,14 @@ std::string readApiKey(const std::string& configPath = "config.ini") {
 }
 
 // Web Mercator meters-per-pixel at latitude phi (radians) and zoom z
-static double metersPerPixel(double lat_deg, int z)
+double metersPerPixel(double lat_deg, int z)
 {
     const double R = 6378137.0;
     const double phi = lat_deg * M_PI / 180.0;
     return std::cos(phi) * 2.0 * M_PI * R / (256.0 * std::pow(2.0, z));
 }
 
-cv::Mat loadOrFetchMapImage(const std::string& filename, const std::string& url, bool verbose = true)
+cv::Mat loadOrFetchMapImage(const std::string& filename, const std::string& url, bool verbose)
 {
     // First, try to load from disk
     cv::Mat img = cv::imread(filename);
