@@ -53,7 +53,7 @@ struct DatasetSampleConfig {
 //     "uavvisloc_03", "uavvisloc",
 //     "Datasets/UAV_VisLoc_example/03/drone", "03", 768,
 //     "Datasets/UAV_VisLoc_example/03/03.csv",
-//     "Images/map_clean_uavvisloc_03_fine.png",
+//     "Images/map_clean_uavvisloc_03.png",  // ~1.19 m/px -- see flight 01's comment below re: reverting from _fine
 //     "Datasets/UAV_VisLoc_example/satellite_ coordinates_range.csv",
 //     "03.tif",
 //     "Videos/dataset_uavvisloc_03.avi",
@@ -74,7 +74,14 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
             "uavvisloc_01", "uavvisloc",
             "Datasets/UAV_VisLoc_dataset/01/drone", "01", 817,
             "Datasets/UAV_VisLoc_dataset/01/01.csv",
-            "Images/map_clean_uavvisloc_01_fine.png",  // ~0.6 m/px, see flight 03's comment above
+            // ~1.19 m/px (target-mpp 1.0 default). Was briefly regenerated at
+            // ~0.6 m/px to test whether map/video resolution mismatch was
+            // the dominant UAV-VisLoc accuracy bottleneck -- it wasn't
+            // (flat-to-worse results, see CLAUDE.md Investigation Log's
+            // "Resolution-gap experiment"), so reverted back to the coarser
+            // map: same accuracy, ~4x fewer pixels per reference crop, and
+            // meaningfully faster full-flight runs with no downside found.
+            "Images/map_clean_uavvisloc_01.png",
             "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
             "satellite01.tif",
             "Videos/dataset_uavvisloc_01.avi",

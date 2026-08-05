@@ -20,6 +20,7 @@
 #include "TelemetryImporter.hpp"
 #include "DatasetVideoAssembler.hpp"
 #include "DatasetSamples.hpp"
+#include "SelfReferentialExperiment.hpp"
 #include <fstream>
 
 
@@ -291,7 +292,8 @@ void runReferenceMatchingPipeline(
     int frame_skip = 3,
     const std::vector<double>* frame_times_sec = nullptr,
     int grid_spacing_meters = 50,
-    int start_frame_idx_override = -1)
+    int start_frame_idx_override = -1,
+    bool use_particle_filter = false)
 {
     // ------------------------------------------------------------------
     // Reference crop grid for ORB/SIFT/Hybrid
@@ -373,6 +375,16 @@ void runReferenceMatchingPipeline(
     int effective_start_frame_idx = start_frame_idx_override >= 0
         ? start_frame_idx_override : init.frame_index;
 
+    // Loaded here (not passed in) so every caller -- Haifa samples with
+    // ground truth and the dataset pipeline alike -- gets the live
+    // actual-vs-estimated overlay for free, keyed off the same sample_name
+    // already used for readGroundTruthStart() above. Empty vector (not a
+    // null check on the caller's part) for samples without ground truth
+    // yet, e.g. Haifa Sample 3 -- processVideoNavigation only draws the
+    // overlay when the vector it's given is non-null, so pass nullptr in
+    // that case rather than a dangling reference to an empty local.
+    std::vector<std::pair<double, double>> gt_path = loadGroundTruthPath(sample_name);
+
     processVideoNavigation(
         video_path, ref_map, crops,
         center_lat, center_lng, center_x, center_y,
@@ -384,7 +396,9 @@ void runReferenceMatchingPipeline(
         init.coordinates, effective_start_frame_idx,
         /*x_offset=*/0, /*y_offset=*/0,
         feature_mask,
-        frame_times_sec);
+        frame_times_sec,
+        gt_path.empty() ? nullptr : &gt_path,
+        use_particle_filter);
 }
 
 // Runs the full video-navigation pipeline for one Haifa sample: preprocessing
@@ -640,7 +654,12 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
         ref_map, center_lat, center_lng, ref_map.cols / 2, ref_map.rows / 2,
         mpp, m_per_deg_lat, m_per_deg_lng,
         video_frame_gsd, algorithm, feature_mask,
-        /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/200);
+        /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/200,
+        /*start_frame_idx_override=*/-1,
+        // TEMP for A/B testing ParticleFilter vs DroneKalmanFilter -- see
+        // CLAUDE.md Investigation Log. Flip back to false to restore the
+        // Kalman baseline.
+        /*use_particle_filter=*/true);
 }
 
 int main(int argc, char **argv)
@@ -653,6 +672,9 @@ int main(int argc, char **argv)
     // opt-in only via an explicit "d" 2nd arg, never part of the j+m+h default,
     // since it needs its own Datasets/ files and doesn't share a Google Maps key.
     bool run_dataset = false;
+    // Same-domain self-referential diagnostic (see SelfReferentialExperiment.hpp
+    // and CLAUDE.md Investigation Log) -- opt-in via "s", same reasoning as "d".
+    bool run_selfref = false;
     if (argc > 1)
     {
         std::string algo_str = argv[1];
@@ -681,6 +703,8 @@ int main(int argc, char **argv)
             run_haifa = true;
         else if (sim_str == "d")
             run_dataset = true;
+        else if (sim_str == "s")
+            run_selfref = true;
         else
             run_jerusalem = run_manhattan = run_haifa = true;
     }
@@ -996,6 +1020,14 @@ int main(int argc, char **argv)
         std::cout << "\n" << std::string(80, '=') << std::endl;
         std::cout << "ALL DATASET SAMPLES COMPLETE!" << std::endl;
         std::cout << std::string(80, '=') << std::endl;
+    }
+
+    // ==================== SAME-DOMAIN SELF-REFERENTIAL DIAGNOSTIC ====================
+    if (run_selfref)
+    {
+        std::vector<DatasetSampleConfig> dataset_samples = getDatasetSamples();
+        for (const auto& cfg : dataset_samples)
+            runSelfReferentialExperiment(cfg, algorithm);
     }
 
     return 0;

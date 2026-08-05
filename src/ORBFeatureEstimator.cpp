@@ -309,9 +309,25 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     // matches to be geometrically consistent as a planar transformation.
     // False positives from texture similarity that survive the ratio test
     // will not produce a coherent homography.
+    //
+    // Heading-consistency scoring (Phase A1) was tried here and reverted --
+    // measured on flight 01, filtered mean error went from 2269m to 2407m
+    // (~6% worse), raw roughly flat. Diagnosis: the homography's implied
+    // rotation is only well-constrained when a candidate has enough inlier
+    // points (the one calibration match that validated cleanly against Phi1
+    // had 20 inliers), but most candidates never get close to that (see
+    // MIN_VALID_KEYPOINTS commentary elsewhere -- strong matches are rare).
+    // For weak, barely-passing homographies the implied rotation is close to
+    // noise, so scoring by heading-consistency there adds noise, not signal.
+    // See CLAUDE.md Investigation Log for the full writeup.
     // =========================================================================
     int best_idx     = -1;
     int best_inliers = 0;
+    // Every candidate that produced a geometrically consistent homography,
+    // not just the winner -- feeds ParticleFilter's multi-hypothesis
+    // update() (see PositionEstimation.hpp). Harmless extra bookkeeping for
+    // the Kalman path, which never reads this field.
+    std::vector<std::pair<std::pair<double, double>, double>> surviving_candidates;
 
     for (const auto& c : candidates) {
         cv::Mat mask;
@@ -319,6 +335,11 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
         if (H.empty()) continue;
 
         int inliers = cv::countNonZero(mask);
+        if (inliers == 0) continue;
+
+        surviving_candidates.push_back({reference_crops[c.crop_idx].coordinates,
+                                         static_cast<double>(inliers)});
+
         if (inliers > best_inliers) {
             best_inliers = inliers;
             best_idx     = c.crop_idx;
@@ -346,5 +367,7 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
         ? 0.3
         : std::min(1.0, 0.3 + (best_inliers / 30.0) * 0.7);
 
-    return PositionEstimate(reference_crops[best_idx].coordinates, confidence, best_idx);
+    PositionEstimate result(reference_crops[best_idx].coordinates, confidence, best_idx);
+    result.candidates = std::move(surviving_candidates);
+    return result;
 }

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <fstream>
 #include <iomanip>
+#include <cmath>
 #include <sys/stat.h>
 
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
@@ -105,7 +106,10 @@ void processVideoNavigation(
     int x_offset,
     int y_offset,
     const cv::Mat &feature_mask,
-    const std::vector<double> *frame_times_sec)
+    const std::vector<double> *frame_times_sec,
+    const std::vector<std::pair<double, double>> *ground_truth_path,
+    bool use_particle_filter,
+    int max_frames_to_process)
 {
     // =========================================================================
     // INITIALIZATION
@@ -259,10 +263,18 @@ void processVideoNavigation(
     const double measurement_noise = use_optical_flow ? 5.0  : 20.0;
 
     DroneKalmanFilter kalman_filter(process_noise, measurement_noise);
+    // Alternative to kalman_filter -- multi-hypothesis tracking, see
+    // ParticleFilter.hpp and CLAUDE.md Investigation Log. Selected via
+    // use_particle_filter; DroneKalmanFilter is untouched and remains the
+    // default so the existing baseline stays available for comparison.
+    ParticleFilter particle_filter(300);
     bool kalman_initialized = false;
 
     if (initial_position.first != 0.0 && initial_position.second != 0.0) {
-        kalman_filter.initialize(initial_position.first, initial_position.second, 0.0, 0.0);
+        if (use_particle_filter)
+            particle_filter.initialize(initial_position.first, initial_position.second, 0.0, 0.0);
+        else
+            kalman_filter.initialize(initial_position.first, initial_position.second, 0.0, 0.0);
         kalman_initialized = true;
         std::cout << "   Initial position: ("
                   << initial_position.first << ", " << initial_position.second << ")" << std::endl;
@@ -307,6 +319,10 @@ void processVideoNavigation(
     std::vector<std::pair<double, double>> predicted_positions;
     std::vector<double> confidences;
     std::vector<double> innovations_history;
+    // Ground-truth path built up progressively as frames process, same
+    // {0,0}-sentinel-for-gaps convention as raw_positions above -- lets the
+    // actual-vs-estimated overlay below draw only through frames seen so far.
+    std::vector<std::pair<double, double>> gt_positions_drawn;
 
     int outliers_rejected    = 0;
     int low_confidence_count = 0;
@@ -315,6 +331,23 @@ void processVideoNavigation(
     // than discrete map matches, so consecutive rejections mean genuine problems)
     const int MAX_CONSECUTIVE_REJECTIONS = use_optical_flow ? 5 : 10;
     int consecutive_rejections = 0;
+
+    // A recoverable narrow-search-window prior (bias search toward the
+    // Kalman filter's own predicted position, with both a stuck-rejection
+    // escape hatch and a periodic unconditional full-database re-check) was
+    // tried and reverted here -- measured worse than always searching the
+    // full database on flight 01 (raw/filtered mean ~3020m vs baseline's
+    // 2463m/2269m), even after the periodic re-check fix. Root cause: a
+    // narrow window can make wrong matches look self-consistent (low
+    // innovation, high confidence) without ever triggering the rejection-
+    // based escape hatch, and even the periodic full-database correction
+    // gets rejected by the same innovation-gate that's supposed to reject
+    // noise, since it rarely individually clears the >=0.7 confidence bar
+    // needed to override an already-confident (if wrong) filter belief. See
+    // CLAUDE.md Investigation Log -- this is evidence single-hypothesis
+    // tracking with outlier rejection is structurally limited here,
+    // regardless of search-window management, and multi-hypothesis (particle
+    // filter) tracking is the more principled next step if revisited.
 
     // =========================================================================
     // MAIN PROCESSING LOOP
@@ -334,6 +367,10 @@ void processVideoNavigation(
         if (frame_idx < start_frame_idx)      { ++frame_idx; continue; }
         if (frame_idx % frame_skip != 0)      { ++frame_idx; continue; }
 
+        if (max_frames_to_process > 0 && processed_frames >= max_frames_to_process) {
+            std::cout << "Reached max_frames_to_process (" << max_frames_to_process << "), stopping." << std::endl;
+            break;
+        }
         double time_sec, dt;
         if (frame_times_sec && frame_idx < static_cast<int>(frame_times_sec->size())) {
             time_sec = (*frame_times_sec)[frame_idx];
@@ -373,7 +410,8 @@ void processVideoNavigation(
         // =====================================================================
         std::pair<double, double> predicted_position = {0.0, 0.0};
         if (kalman_initialized) {
-            predicted_position = kalman_filter.predict(dt);
+            predicted_position = use_particle_filter ? particle_filter.predict(dt)
+                                                      : kalman_filter.predict(dt);
             predicted_positions.push_back(predicted_position);
         }
 
@@ -384,6 +422,13 @@ void processVideoNavigation(
             filtered_positions.empty() ? initial_position : filtered_positions.back();
         if (last_position.first == 0.0 && last_position.second == 0.0)
             last_position = {center_lat, center_lng};
+
+        // Heading-consistency match scoring (Phase A1) was tried and
+        // reverted here -- measured worse on flight 01 (filtered mean error
+        // 2269m -> 2407m). See ORBFeatureEstimator.cpp and CLAUDE.md
+        // Investigation Log for the diagnosis (RANSAC-implied rotation is
+        // too noisy on the weak, low-inlier matches that make up most
+        // frames to be a useful tiebreaker).
 
         PositionEstimate estimate;
         if (use_optical_flow) {
@@ -399,10 +444,12 @@ void processVideoNavigation(
             // the prediction drifts even slightly, the next search excludes
             // the true position's crops entirely, so the raw match can only
             // ever confirm the wrong neighborhood -- there is no way back.
-            // The threaded Stage-1 matcher (ThreadPool/SyncBarrier in
-            // ORB/SIFTFeatureEstimator) was already built to handle the full
-            // crop database in parallel, so there's no need for this
-            // restriction to keep per-frame latency bounded.
+            // A recoverable narrow-window variant was also tried (see the
+            // comment above MAX_CONSECUTIVE_REJECTIONS) and measured worse,
+            // not better. The threaded Stage-1 matcher (ThreadPool/
+            // SyncBarrier in ORB/SIFTFeatureEstimator) was already built to
+            // handle the full crop database in parallel, so there's no need
+            // for a restriction to keep per-frame latency bounded.
             estimate = estimator->estimatePosition(
                 processed_frame, reference_crops, last_position);
         }
@@ -413,6 +460,9 @@ void processVideoNavigation(
 
         raw_positions.push_back(raw_position);
         confidences.push_back(confidence);
+        gt_positions_drawn.push_back(
+            (ground_truth_path && frame_idx < static_cast<int>(ground_truth_path->size()))
+                ? (*ground_truth_path)[frame_idx] : std::pair<double, double>{0.0, 0.0});
 
         // =====================================================================
         // KALMAN UPDATE with recovery mechanism
@@ -421,7 +471,27 @@ void processVideoNavigation(
         double innovation      = 0.0;
         bool   outlier_rejected = false;
 
-        if (!kalman_initialized) {
+        if (use_particle_filter) {
+            if (!kalman_initialized) {
+                particle_filter.initialize(raw_position.first, raw_position.second, 0.0, 0.0);
+                kalman_initialized = true;
+                filtered_position  = raw_position;
+                std::cout << "   ✓ Particle filter initialized at frame " << frame_idx << std::endl;
+            } else {
+                // The particle filter's update step uses the entire list of
+                // geometrically consistent candidates from the estimator. Each
+                // candidate "pulls" the particle weights towards its location,
+                // with the pull strength proportional to its score (inlier count).
+                // This is fundamentally more robust than the Kalman filter's
+                // single-measurement update, as it can recover from a single
+                // bad-but-high-scoring raw match.
+                filtered_position = particle_filter.update(estimate.candidates, confidence);
+            }
+            // Innovation and outlier rejection are concepts for a single-hypothesis
+            // filter (like Kalman). They don't apply here, so we leave them at 0.
+            innovations_history.push_back(innovation);
+
+        } else if (!kalman_initialized) {
             kalman_filter.initialize(raw_position.first, raw_position.second, 0.0, 0.0);
             kalman_initialized = true;
             filtered_position  = raw_position;
@@ -485,6 +555,11 @@ void processVideoNavigation(
             << (outlier_rejected ? "1" : "0") << ","
             << best_match_idx << ","
             << algorithm_name << "\n";
+        // Flushed every frame (not just at loop exit) so a run that's killed
+        // partway through -- e.g. for a quick "run ~1 min, inspect partial
+        // results" iteration check -- doesn't lose buffered-but-unwritten
+        // rows. Negligible cost next to per-frame ORB/SIFT matching time.
+        telemetry_file.flush();
 
         // =====================================================================
         // VISUALIZATION
@@ -515,6 +590,25 @@ void processVideoNavigation(
                 center_lat, center_lng, center_x, center_y, mpp,
                 meters_per_degree_lat, meters_per_degree_lng);
             cv::line(display_map, p1, p2, cv::Scalar(255, 0, 0), 1);
+        }
+
+        // Draw ground-truth path (thick orange) -- distinct from raw (blue)
+        // and filtered (green/yellow/red by confidence) so actual-vs-
+        // estimated drift is visible live, not just after the fact via
+        // evaluate_ground_truth.py. No-op (nothing drawn) when
+        // ground_truth_path is null, e.g. Haifa Sample 3 / any sample
+        // without ground truth yet.
+        for (size_t i = 1; i < gt_positions_drawn.size(); ++i) {
+            if (gt_positions_drawn[i].first == 0.0 || gt_positions_drawn[i-1].first == 0.0) continue;
+            cv::Point p1 = CoordinateUtils::latLngToPixel(
+                gt_positions_drawn[i-1].first, gt_positions_drawn[i-1].second,
+                center_lat, center_lng, center_x, center_y, mpp,
+                meters_per_degree_lat, meters_per_degree_lng);
+            cv::Point p2 = CoordinateUtils::latLngToPixel(
+                gt_positions_drawn[i].first, gt_positions_drawn[i].second,
+                center_lat, center_lng, center_x, center_y, mpp,
+                meters_per_degree_lat, meters_per_degree_lng);
+            cv::line(display_map, p1, p2, cv::Scalar(0, 140, 255), 2);
         }
 
         // Draw filtered path (thick, confidence-colour-coded)
@@ -580,6 +674,15 @@ void processVideoNavigation(
                             cv::Point(10, 150), cv::FONT_HERSHEY_SIMPLEX, 0.55,
                             cv::Scalar(200, 255, 200), 1);
             }
+        }
+
+        if (ground_truth_path) {
+            cv::putText(display_map, "-- Ground Truth", cv::Point(10, 180),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 140, 255), 2);
+            cv::putText(display_map, "-- Raw Estimate", cv::Point(10, 205),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(255, 0, 0), 2);
+            cv::putText(display_map, "-- Filtered Estimate", cv::Point(10, 230),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 2);
         }
 
         cv::imshow("Video Navigation", display_map);

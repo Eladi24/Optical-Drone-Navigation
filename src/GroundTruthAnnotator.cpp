@@ -8,6 +8,7 @@
 #include <iomanip>
 #include <cmath>
 #include <functional>
+#include <algorithm>
 #include <sys/stat.h>
 
 namespace {
@@ -319,4 +320,38 @@ InitializationData readGroundTruthStart(const std::string& sample_name) {
     if (!found)
         return {false, 0, {0.0, 0.0}};
     return {true, best_frame, {best_lat, best_lng}};
+}
+
+std::vector<std::pair<double, double>> loadGroundTruthPath(const std::string& sample_name) {
+    std::string path = "CSV Files/ground_truth_" + sample_name + ".csv";
+    std::ifstream f(path);
+    if (!f.is_open())
+        return {};
+
+    std::string line;
+    std::getline(f, line);   // header
+
+    std::vector<std::pair<int, std::pair<double, double>>> rows;
+    int max_frame = 0;
+    while (std::getline(f, line)) {
+        std::istringstream ss(line);
+        std::string frame_s, time_s, lat_s, lng_s;
+        std::getline(ss, frame_s, ',');
+        std::getline(ss, time_s,  ',');
+        std::getline(ss, lat_s,   ',');
+        std::getline(ss, lng_s,   ',');
+        if (frame_s.empty() || lat_s.empty() || lng_s.empty())
+            continue;
+
+        int frame = std::stoi(frame_s);
+        rows.push_back({frame, {std::stod(lat_s), std::stod(lng_s)}});
+        max_frame = std::max(max_frame, frame);
+    }
+
+    std::vector<std::pair<double, double>> path_by_frame(max_frame, {0.0, 0.0});
+    for (const auto& [frame, coords] : rows) {
+        if (frame >= 1 && frame <= max_frame)
+            path_by_frame[frame - 1] = coords;
+    }
+    return path_by_frame;
 }

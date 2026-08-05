@@ -56,6 +56,7 @@ build/
 build*/
 # Ignore project reference/notes file (kept local, not committed)
 CLAUDE.md
+AGENTS.md
 # Ignore UAV-VisLoc converted satellite maps (regenerable via
 # scripts/convert_uavvisloc_satellite.py -- unlike Haifa/Jerusalem/Manhattan's
 # Google-Maps-fetched maps, these aren't capped by an API size limit and can

@@ -11,6 +11,14 @@ struct PositionEstimate {
     double confidence;
     int best_match_idx;
 
+    // Optional multi-hypothesis observation for ParticleFilter (see
+    // include/ParticleFilter.hpp): (position, inlier-derived score) for each
+    // candidate that survived RANSAC, not just the single winner above.
+    // Populated by ORBFeatureEstimator only; empty for every other estimator
+    // (SIFT/AKAZE/Hybrid/OpticalFlow) and unused by DroneKalmanFilter, which
+    // only ever reads position/confidence -- so this is purely additive.
+    std::vector<std::pair<std::pair<double, double>, double>> candidates;
+
     PositionEstimate() : position({0.0, 0.0}), confidence(0.0), best_match_idx(-1) {}
     PositionEstimate(std::pair<double, double> pos, double conf, int idx = -1)
         : position(pos), confidence(conf), best_match_idx(idx) {}

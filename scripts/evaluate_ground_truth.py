@@ -88,6 +88,7 @@ def main():
         sys.exit(1)
 
     raw_errors, filt_errors = [], []
+    skipped_gap = 0
     print(f"{'Frame':>6} {'Time(s)':>8} {'Label':>14} {'RawErr(m)':>10} {'FiltErr(m)':>11} {'Conf':>6}")
     print("-" * 62)
 
@@ -96,12 +97,22 @@ def main():
         gap = abs(row["frame"] - pt["frame"])
         raw_err = haversine_flat_m(pt["lat"], pt["lng"], row["raw_lat"], row["raw_lng"])
         filt_err = haversine_flat_m(pt["lat"], pt["lng"], row["filt_lat"], row["filt_lng"])
-        raw_errors.append(raw_err)
-        filt_errors.append(filt_err)
 
         gap_flag = f"  [gap={gap}f]" if gap > args.max_frame_gap else ""
         print(f"{pt['frame']:>6} {pt['time_sec']:>8.1f} {pt['label']:>14} "
               f"{raw_err:>10.1f} {filt_err:>11.1f} {row['confidence']:>6.2f}{gap_flag}")
+
+        # Points whose nearest telemetry row is beyond max_frame_gap aren't a
+        # real comparison (e.g. a partial/killed run whose telemetry stops
+        # early -- every later ground-truth point would otherwise silently
+        # pair with that same last stale row). Shown above for visibility,
+        # excluded here so a partial run's summary reflects only the frames
+        # actually processed, not stale carry-forward matches.
+        if gap > args.max_frame_gap:
+            skipped_gap += 1
+            continue
+        raw_errors.append(raw_err)
+        filt_errors.append(filt_err)
 
     def stats(vals):
         vals = sorted(vals)
@@ -110,13 +121,16 @@ def main():
         median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
         return mean, median, max(vals)
 
-    raw_mean, raw_median, raw_max = stats(raw_errors)
-    filt_mean, filt_median, filt_max = stats(filt_errors)
-
     print("-" * 62)
-    print(f"{'RAW':>29}   mean={raw_mean:7.1f}m  median={raw_median:7.1f}m  max={raw_max:7.1f}m")
-    print(f"{'FILTERED':>29}   mean={filt_mean:7.1f}m  median={filt_median:7.1f}m  max={filt_max:7.1f}m")
-    print(f"\n{len(gt)} ground-truth point(s) evaluated.")
+    if raw_errors:
+        raw_mean, raw_median, raw_max = stats(raw_errors)
+        filt_mean, filt_median, filt_max = stats(filt_errors)
+        print(f"{'RAW':>29}   mean={raw_mean:7.1f}m  median={raw_median:7.1f}m  max={raw_max:7.1f}m")
+        print(f"{'FILTERED':>29}   mean={filt_mean:7.1f}m  median={filt_median:7.1f}m  max={filt_max:7.1f}m")
+    else:
+        print("No ground-truth points within --max-frame-gap of any telemetry row.")
+    print(f"\n{len(raw_errors)} ground-truth point(s) evaluated"
+          f"{f' ({skipped_gap} skipped, nearest telemetry row > {args.max_frame_gap} frames away)' if skipped_gap else ''}.")
 
 
 if __name__ == "__main__":

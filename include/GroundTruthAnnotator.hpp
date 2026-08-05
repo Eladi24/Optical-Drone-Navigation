@@ -1,6 +1,8 @@
 #pragma once
 
 #include <string>
+#include <utility>
+#include <vector>
 #include "HaifaSamples.hpp"
 #include "GlobalLocator.hpp"
 
@@ -34,3 +36,17 @@ void runGroundTruthAnnotator(const HaifaSampleConfig& cfg);
 // normal GlobalLocator + manual-selection flow in that case.
 // ---------------------------------------------------------------------------
 InitializationData readGroundTruthStart(const std::string& sample_name);
+
+// ---------------------------------------------------------------------------
+// Reads "CSV Files/ground_truth_<sample_name>.csv" into a vector indexed by
+// (Frame - 1), i.e. by the 0-based frame index processVideoNavigation()'s
+// frame_idx uses -- same indexing convention as
+// TelemetryImporter::loadTelemetryFrameTimes(). Frames with no ground-truth
+// row are left as {0.0, 0.0}, matching the sentinel already used for
+// raw_positions/filtered_positions gaps in VideoProcessing.cpp's path
+// drawing. Works for both dense (UAV-VisLoc, one row per frame) and sparse
+// (Haifa, a handful of manually-annotated frames) ground truth -- the caller
+// just skips segments where either endpoint is the sentinel.
+// Returns an empty vector if the file doesn't exist.
+// ---------------------------------------------------------------------------
+std::vector<std::pair<double, double>> loadGroundTruthPath(const std::string& sample_name);

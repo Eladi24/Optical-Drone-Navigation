@@ -45,6 +45,7 @@ add_library(DroneNavigation
     src/CoordinateUtils.cpp
     src/MapUtils.cpp
     src/KalmanFilter.cpp
+    src/ParticleFilter.cpp
     
     # Video processing
     src/VideoProcessing.cpp
@@ -56,6 +57,7 @@ add_library(DroneNavigation
     src/GroundTruthAnnotator.cpp
     src/TelemetryImporter.cpp
     src/DatasetVideoAssembler.cpp
+    src/SelfReferentialExperiment.cpp
 )
 target_link_libraries(DroneNavigation ${OpenCV_LIBS} ${CURL_LIBRARIES} Threads::Threads)
 

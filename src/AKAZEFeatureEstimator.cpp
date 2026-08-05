@@ -238,6 +238,10 @@ PositionEstimate AKAZEFeatureEstimator::estimatePosition(
 
     int best_idx     = -1;
     int best_inliers = 0;
+    // Every candidate that produced a geometrically consistent homography,
+    // not just the winner -- feeds ParticleFilter's multi-hypothesis
+    // update() (see PositionEstimation.hpp).
+    std::vector<std::pair<std::pair<double, double>, double>> surviving_candidates;
 
     for (const auto& c : candidates) {
         cv::Mat mask;
@@ -245,6 +249,11 @@ PositionEstimate AKAZEFeatureEstimator::estimatePosition(
         if (H.empty()) continue;
 
         int inliers = cv::countNonZero(mask);
+        if (inliers == 0) continue;
+
+        surviving_candidates.push_back({reference_crops[c.crop_idx].coordinates,
+                                         static_cast<double>(inliers)});
+
         if (inliers > best_inliers) {
             best_inliers = inliers;
             best_idx     = c.crop_idx;
@@ -260,5 +269,7 @@ PositionEstimate AKAZEFeatureEstimator::estimatePosition(
         ? 0.3
         : std::min(1.0, 0.3 + (best_inliers / 30.0) * 0.7);
 
-    return PositionEstimate(reference_crops[best_idx].coordinates, confidence, best_idx);
+    PositionEstimate result(reference_crops[best_idx].coordinates, confidence, best_idx);
+    result.candidates = std::move(surviving_candidates);
+    return result;
 }
