@@ -1,2 +1,0 @@
-/usr/bin/ar qc libTemplateMatching.a CMakeFiles/TemplateMatching.dir/TemplateMatching.cpp.o
-/usr/bin/ranlib libTemplateMatching.a
