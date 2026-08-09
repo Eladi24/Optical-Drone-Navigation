@@ -1,4 +1,6 @@
 #include "SIFTFeatureEstimator.hpp"
+#include "CoordinateUtils.hpp"
+#include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
 #include <algorithm>
 #include <iostream>
@@ -240,24 +242,19 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
     if (candidates.empty())
         return PositionEstimate(last_position, 0.1, -1);
 
-    // Sort descending by raw match count — best crops first for RANSAC
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Candidate& a, const Candidate& b) {
-                  return a.good_match_count > b.good_match_count;
-              });
-
-    // Limit RANSAC to the top candidates.
-    // SIFT is more distinctive than ORB so the true match almost always
-    // ranks first or second by raw count; 5 is a safe upper bound.
-    const int MAX_RANSAC = 5;
-    if (static_cast<int>(candidates.size()) > MAX_RANSAC)
-        candidates.resize(MAX_RANSAC);
-
     // =========================================================================
-    // STAGE 2 — RANSAC homography verification on the short-list
+    // STAGE 2 — RANSAC homography verification on every Stage-1 candidate
+    //
+    // Previously ran only on the top 5 by raw match count. Raw count is
+    // exactly the statistic cross-domain aliasing corrupts, so a
+    // geometrically correct crop ranked 6th+ never reached RANSAC. Stage 1
+    // already gates candidates at >=8 ratio-passing matches, so every
+    // candidate that cleared it gets RANSAC-verified here. See
+    // ORBFeatureEstimator.cpp for the full writeup (identical fix, mirrored).
     // =========================================================================
     int best_idx     = -1;
     int best_inliers = 0;
+    cv::Mat best_H;
     // Every candidate that produced a geometrically consistent homography,
     // not just the winner -- feeds ParticleFilter's multi-hypothesis
     // update() (see PositionEstimation.hpp).
@@ -277,12 +274,41 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
         if (inliers > best_inliers) {
             best_inliers = inliers;
             best_idx     = c.crop_idx;
+            best_H       = H.clone();
         }
     }
 
+    // No candidate produced a geometrically consistent homography -- no real
+    // measurement this frame. Report it honestly instead of falling back to
+    // an unverified raw-count guess; let the Kalman filter predict.
     if (best_idx == -1) {
-        best_idx     = candidates[0].crop_idx;
-        best_inliers = 0;
+        PositionEstimate result(last_position, 0.0, -1);
+        result.measurement_valid = false;
+        return result;
+    }
+
+    // Continuous position refinement — see ORBFeatureEstimator.cpp for the
+    // full rationale (identical fix, mirrored here).
+    std::pair<double, double> refined_position = reference_crops[best_idx].coordinates;
+    if (mpp_ > 0.0) {
+        const cv::Mat& crop_image = reference_crops[best_idx].image;
+        std::vector<cv::Point2f> src{cv::Point2f(drone_view.cols / 2.0f, drone_view.rows / 2.0f)};
+        std::vector<cv::Point2f> dst;
+        cv::perspectiveTransform(src, dst, best_H);
+
+        double offset_px_x = std::abs(dst[0].x - crop_image.cols / 2.0);
+        double offset_px_y = std::abs(dst[0].y - crop_image.rows / 2.0);
+        double offset_m_x  = offset_px_x * mpp_;
+        double offset_m_y  = offset_px_y * mpp_;
+
+        if (offset_m_x <= kReferenceCropMeters * 0.75 && offset_m_y <= kReferenceCropMeters * 0.75) {
+            refined_position = CoordinateUtils::pixelToLatLng(
+                static_cast<int>(dst[0].x), static_cast<int>(dst[0].y),
+                reference_crops[best_idx].coordinates.first,
+                reference_crops[best_idx].coordinates.second,
+                crop_image.cols / 2, crop_image.rows / 2,
+                mpp_, meters_per_degree_lat_, meters_per_degree_lng_);
+        }
     }
 
     // =========================================================================
@@ -295,11 +321,10 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
     // SIFT produces more geometrically precise matches than ORB; the divisor
     // of 25 spreads the range nicely over typical inlier counts for this scene.
     // =========================================================================
-    const double confidence = (best_inliers == 0)
-        ? 0.1
-        : std::min(1.0, 0.1 + (best_inliers / 25.0) * 0.9);
+    const double confidence = std::min(1.0, 0.1 + (best_inliers / 25.0) * 0.9);
 
-    PositionEstimate result(reference_crops[best_idx].coordinates, confidence, best_idx);
+    PositionEstimate result(refined_position, confidence, best_idx);
     result.candidates = std::move(surviving_candidates);
+    result.inliers     = best_inliers;
     return result;
 }

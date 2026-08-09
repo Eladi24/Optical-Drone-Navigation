@@ -1,5 +1,7 @@
 #include "ORBFeatureEstimator.hpp"
 #include "SyncBarrier.hpp"
+#include "CoordinateUtils.hpp"
+#include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
 #include <algorithm>
 #include <iostream>
@@ -289,26 +291,21 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     if (candidates.empty())
         return PositionEstimate(last_position, 0.3, -1);
 
-    // Sort descending by raw good-match count so RANSAC evaluates the most
-    // promising crops first
-    std::sort(candidates.begin(), candidates.end(),
-              [](const Candidate& a, const Candidate& b) {
-                  return a.good_match_count > b.good_match_count;
-              });
-
-    // Limit RANSAC to the top N candidates to keep per-frame latency bounded.
-    // The true match almost always ranks first or second by raw count.
-    const int MAX_RANSAC = 5;
-    if (static_cast<int>(candidates.size()) > MAX_RANSAC)
-        candidates.resize(MAX_RANSAC);
-
     // =========================================================================
-    // STAGE 2 — RANSAC homography verification on the shortlist
+    // STAGE 2 — RANSAC homography verification on every Stage-1 candidate
     //
     // Inlier count is a stronger score than raw match count: it requires the
     // matches to be geometrically consistent as a planar transformation.
     // False positives from texture similarity that survive the ratio test
-    // will not produce a coherent homography.
+    // will not produce a coherent homography. Previously this ran only on
+    // the top 5 candidates by raw match count, on the theory that "the true
+    // match almost always ranks first or second by raw count" -- but raw
+    // match count is exactly the statistic cross-domain aliasing corrupts
+    // (see CLAUDE.md's generic-attractor findings), so a geometrically
+    // correct crop ranked 6th+ never reached RANSAC at all. Stage 1 already
+    // gates candidates at >=8 ratio-passing matches (the minimum needed for
+    // a meaningful homography), so no separate "low threshold" is needed
+    // here -- every candidate that cleared Stage 1 gets RANSAC-verified.
     //
     // Heading-consistency scoring (Phase A1) was tried here and reverted --
     // measured on flight 01, filtered mean error went from 2269m to 2407m
@@ -323,6 +320,7 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     // =========================================================================
     int best_idx     = -1;
     int best_inliers = 0;
+    cv::Mat best_H;
     // Every candidate that produced a geometrically consistent homography,
     // not just the winner -- feeds ParticleFilter's multi-hypothesis
     // update() (see PositionEstimation.hpp). Harmless extra bookkeeping for
@@ -343,14 +341,53 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
         if (inliers > best_inliers) {
             best_inliers = inliers;
             best_idx     = c.crop_idx;
+            best_H       = H.clone();
         }
     }
 
-    // If RANSAC found no geometrically consistent match, fall back to the
-    // highest raw-count candidate with a floor confidence
+    // No candidate produced a geometrically consistent homography -- there is
+    // no real measurement this frame. Previously this fell back to the
+    // highest-raw-count candidate at a floor confidence, i.e. a known-bad
+    // guess dressed up as a low-confidence one (STRATEGY.md Sec 4.3 #2).
+    // Report it honestly instead and let the Kalman filter predict.
     if (best_idx == -1) {
-        best_idx     = candidates[0].crop_idx;
-        best_inliers = 0;
+        PositionEstimate result(last_position, 0.0, -1);
+        result.measurement_valid = false;
+        return result;
+    }
+
+    // =========================================================================
+    // Continuous position refinement: project the drone frame's center
+    // through the winning homography instead of returning the matched
+    // crop's centroid. Removes the grid-quantization floor (STRATEGY.md
+    // Sec 4.2) -- previously every raw position was quantized to the
+    // reference-crop grid spacing (50m Haifa, 200m UAV-VisLoc) regardless
+    // of how precisely the match actually located the frame within the crop.
+    // =========================================================================
+    std::pair<double, double> refined_position = reference_crops[best_idx].coordinates;
+    if (mpp_ > 0.0) {
+        const cv::Mat& crop_image = reference_crops[best_idx].image;
+        std::vector<cv::Point2f> src{cv::Point2f(drone_view.cols / 2.0f, drone_view.rows / 2.0f)};
+        std::vector<cv::Point2f> dst;
+        cv::perspectiveTransform(src, dst, best_H);
+
+        double offset_px_x = std::abs(dst[0].x - crop_image.cols / 2.0);
+        double offset_px_y = std::abs(dst[0].y - crop_image.rows / 2.0);
+        double offset_m_x  = offset_px_x * mpp_;
+        double offset_m_y  = offset_px_y * mpp_;
+
+        // Reject implausible extrapolation from a degenerate/near-degenerate
+        // homography rather than trusting an offset larger than the crop the
+        // match was actually verified against (0.75x its real-world size,
+        // not an arbitrary new constant).
+        if (offset_m_x <= kReferenceCropMeters * 0.75 && offset_m_y <= kReferenceCropMeters * 0.75) {
+            refined_position = CoordinateUtils::pixelToLatLng(
+                static_cast<int>(dst[0].x), static_cast<int>(dst[0].y),
+                reference_crops[best_idx].coordinates.first,
+                reference_crops[best_idx].coordinates.second,
+                crop_image.cols / 2, crop_image.rows / 2,
+                mpp_, meters_per_degree_lat_, meters_per_degree_lng_);
+        }
     }
 
     // =========================================================================
@@ -363,11 +400,10 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     // inliers for known-good matches, lower it to ~15 to spread the range.
     // If you regularly see 40+ inliers, raise it accordingly.
     // =========================================================================
-    const double confidence = (best_inliers == 0)
-        ? 0.3
-        : std::min(1.0, 0.3 + (best_inliers / 30.0) * 0.7);
+    const double confidence = std::min(1.0, 0.3 + (best_inliers / 30.0) * 0.7);
 
-    PositionEstimate result(reference_crops[best_idx].coordinates, confidence, best_idx);
+    PositionEstimate result(refined_position, confidence, best_idx);
     result.candidates = std::move(surviving_candidates);
+    result.inliers     = best_inliers;
     return result;
 }

@@ -7,6 +7,7 @@
 #include <fstream>
 #include <iomanip>
 #include <cmath>
+#include <algorithm>
 #include <sys/stat.h>
 
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
@@ -248,6 +249,7 @@ void processVideoNavigation(
                        0, 0, cv::INTER_NEAREST);
         }
         estimator->setFeatureMask(aligned_mask);
+        estimator->setGeoReference(mpp, meters_per_degree_lat, meters_per_degree_lng);
 
         estimator->precompute(reference_crops);
     }
@@ -262,7 +264,8 @@ void processVideoNavigation(
     const double process_noise     = use_optical_flow ? 0.1  : 1.0;
     const double measurement_noise = use_optical_flow ? 5.0  : 20.0;
 
-    DroneKalmanFilter kalman_filter(process_noise, measurement_noise);
+    DroneKalmanFilter kalman_filter(process_noise, measurement_noise,
+                                     meters_per_degree_lat, meters_per_degree_lng);
     // Alternative to kalman_filter -- multi-hypothesis tracking, see
     // ParticleFilter.hpp and CLAUDE.md Investigation Log. Selected via
     // use_particle_filter; DroneKalmanFilter is untouched and remains the
@@ -309,7 +312,8 @@ void processVideoNavigation(
     }
     telemetry_file << "Frame,Time_Sec,Raw_Lat,Raw_Lng,Predicted_Lat,Predicted_Lng,"
                    << "Filtered_Lat,Filtered_Lng,Match_Confidence,Innovation_M,"
-                   << "Outlier_Rejected,Best_Match_Idx,Algorithm\n";
+                   << "Outlier_Rejected,Best_Match_Idx,Algorithm,"
+                   << "Inliers,Measurement_Valid,Correct_Candidate_Rank\n";
 
     // =========================================================================
     // TRAJECTORY STORAGE
@@ -460,9 +464,45 @@ void processVideoNavigation(
 
         raw_positions.push_back(raw_position);
         confidences.push_back(confidence);
+        bool has_gt_this_frame =
+            ground_truth_path && frame_idx < static_cast<int>(ground_truth_path->size()) &&
+            (*ground_truth_path)[frame_idx].first != 0.0;
         gt_positions_drawn.push_back(
-            (ground_truth_path && frame_idx < static_cast<int>(ground_truth_path->size()))
-                ? (*ground_truth_path)[frame_idx] : std::pair<double, double>{0.0, 0.0});
+            has_gt_this_frame ? (*ground_truth_path)[frame_idx] : std::pair<double, double>{0.0, 0.0});
+
+        // =====================================================================
+        // recall@k INSTRUMENTATION (STRATEGY.md Sec 7) -- separates "was the
+        // right crop even retrieved" from "did the fusion layer trust it."
+        // Computed here (not inside the estimator) because ground truth is
+        // only available at this layer. 1-indexed rank of the first
+        // RANSAC-surviving candidate within kReferenceCropMeters/2 of the
+        // true position (inside that candidate crop's own real-world
+        // footprint) among estimate.candidates sorted by score (inlier
+        // count) descending; -1 if none qualify; -2 (no ground truth this
+        // frame) written as blank in the CSV. recall@k for any k is then
+        // just 0 < rank <= k -- more informative than baking in fixed
+        // recall@{1,5,10} boolean columns.
+        // =====================================================================
+        int correct_candidate_rank = -2;  // sentinel: no ground truth this frame
+        if (has_gt_this_frame && !estimate.candidates.empty()) {
+            auto sorted_candidates = estimate.candidates;
+            std::sort(sorted_candidates.begin(), sorted_candidates.end(),
+                      [](const auto& a, const auto& b) { return a.second > b.second; });
+
+            const std::pair<double, double>& true_pos = (*ground_truth_path)[frame_idx];
+            correct_candidate_rank = -1;  // no qualifying candidate found
+            for (size_t i = 0; i < sorted_candidates.size(); ++i) {
+                double dist = CoordinateUtils::calculateDistance(
+                    sorted_candidates[i].first, true_pos,
+                    meters_per_degree_lat, meters_per_degree_lng);
+                if (dist <= kReferenceCropMeters / 2.0) {
+                    correct_candidate_rank = static_cast<int>(i) + 1;
+                    break;
+                }
+            }
+        } else if (has_gt_this_frame) {
+            correct_candidate_rank = -1;  // had ground truth, but no surviving candidates at all
+        }
 
         // =====================================================================
         // KALMAN UPDATE with recovery mechanism
@@ -496,6 +536,20 @@ void processVideoNavigation(
             kalman_initialized = true;
             filtered_position  = raw_position;
             std::cout << "   ✓ Kalman initialized at frame " << frame_idx << std::endl;
+            innovations_history.push_back(0.0);
+
+        } else if (!estimate.measurement_valid) {
+            // No candidate produced a geometrically consistent homography --
+            // there is no real measurement this frame (STRATEGY.md Sec 4.3
+            // #2: previously this case was indistinguishable from a genuine
+            // low-confidence measurement and still got fused via
+            // kalman_filter.update(), letting a known-bad guess move the
+            // state). Skip the measurement update entirely and coast on the
+            // prediction -- this is NOT the same as an innovation-gated
+            // outlier rejection (that still trusted the raw position enough
+            // to compute an innovation against it), so it's counted and
+            // logged separately (Measurement_Valid CSV column).
+            filtered_position = predicted_position;
             innovations_history.push_back(0.0);
 
         } else {
@@ -554,7 +608,10 @@ void processVideoNavigation(
             << std::setprecision(2) << innovation << ","
             << (outlier_rejected ? "1" : "0") << ","
             << best_match_idx << ","
-            << algorithm_name << "\n";
+            << algorithm_name << ","
+            << estimate.inliers << ","
+            << (estimate.measurement_valid ? "1" : "0") << ","
+            << (correct_candidate_rank == -2 ? "" : std::to_string(correct_candidate_rank)) << "\n";
         // Flushed every frame (not just at loop exit) so a run that's killed
         // partway through -- e.g. for a quick "run ~1 min, inspect partial
         // results" iteration check -- doesn't lose buffered-but-unwritten

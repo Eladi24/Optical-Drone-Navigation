@@ -656,10 +656,13 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
         video_frame_gsd, algorithm, feature_mask,
         /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/200,
         /*start_frame_idx_override=*/-1,
-        // TEMP for A/B testing ParticleFilter vs DroneKalmanFilter -- see
-        // CLAUDE.md Investigation Log. Flip back to false to restore the
-        // Kalman baseline.
-        /*use_particle_filter=*/true);
+        // Restored to the Kalman baseline (was TEMPly true for A/B testing
+        // ParticleFilter vs DroneKalmanFilter -- see CLAUDE.md Investigation
+        // Log's particle-filter section, paused not abandoned). STRATEGY.md
+        // Phase 0's gate measures the fixed single-hypothesis Kalman/RANSAC
+        // path specifically; leaving this on the particle filter would
+        // measure a different, already-characterized code path instead.
+        /*use_particle_filter=*/false);
 }
 
 int main(int argc, char **argv)
@@ -708,11 +711,16 @@ int main(int argc, char **argv)
         else
             run_jerusalem = run_manhattan = run_haifa = true;
     }
-    // Optional 4th arg: restrict the Haifa loop to a single sample (1-3),
-    // for fast iterative testing instead of re-running all three every time.
-    int haifa_sample_filter = 0; // 0 = all samples
+    // Optional 4th arg: a per-sample filter, meaning differs by location --
+    // restricts the Haifa loop to a single sample number (1-3) when
+    // location=h (existing behavior), or does a substring match against
+    // DatasetSampleConfig::sample_name when location=d (e.g. "uavvisloc_01"
+    // or just "01") -- lets scripts/run_benchmark.py invoke one flight at a
+    // time instead of always running every configured flight.
+    std::string sample_filter_arg;
     if (argc > 3)
-        haifa_sample_filter = std::atoi(argv[3]);
+        sample_filter_arg = argv[3];
+    int haifa_sample_filter = sample_filter_arg.empty() ? 0 : std::atoi(sample_filter_arg.c_str());
 
     // Only Jerusalem/Manhattan/Haifa fetch live Google Maps imagery -- the
     // dataset pipeline brings its own pre-converted reference map, so a
@@ -1015,7 +1023,13 @@ int main(int argc, char **argv)
 
         std::vector<DatasetSampleConfig> dataset_samples = getDatasetSamples();
         for (const auto& cfg : dataset_samples)
+        {
+            if (!sample_filter_arg.empty() &&
+                cfg.sample_name.find(sample_filter_arg) == std::string::npos)
+                continue;
+
             runDatasetPipelineForSample(cfg, algorithm);
+        }
 
         std::cout << "\n" << std::string(80, '=') << std::endl;
         std::cout << "ALL DATASET SAMPLES COMPLETE!" << std::endl;

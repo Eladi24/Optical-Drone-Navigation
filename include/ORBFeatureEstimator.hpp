@@ -22,6 +22,13 @@ public:
 
     void setFeatureMask(const cv::Mat& mask) override { feature_mask_ = mask; }
 
+    void setGeoReference(double mpp, double meters_per_degree_lat,
+                          double meters_per_degree_lng) override {
+        mpp_ = mpp;
+        meters_per_degree_lat_ = meters_per_degree_lat;
+        meters_per_degree_lng_ = meters_per_degree_lng;
+    }
+
     PositionEstimate estimatePosition(
         const cv::Mat&                    drone_view,
         const std::vector<ReferenceCrop>& reference_crops,
@@ -33,6 +40,13 @@ public:
 private:
     cv::Ptr<cv::ORB> orb_detector_;
     cv::Mat          feature_mask_;  // 255=use, 0=exclude; applied only to drone frames
+
+    // Geo-referencing scale set via setGeoReference(); 0.0 until then, which
+    // also serves as the guard that skips homography-based position
+    // refinement if it was never called (see estimatePosition()).
+    double mpp_ = 0.0;
+    double meters_per_degree_lat_ = 0.0;
+    double meters_per_degree_lng_ = 0.0;
 
     // Persistent thread pool — created once, reused across every video frame.
     // Avoids the pthread_create / pthread_join overhead that would otherwise

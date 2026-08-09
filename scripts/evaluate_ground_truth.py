@@ -1,12 +1,22 @@
 #!/usr/bin/env python3
 """
 Compares a navigation telemetry CSV against a hand-annotated ground-truth
-CSV (produced by the GroundTruth tool) and reports position error in metres
-at each annotated landmark frame.
+CSV (produced by the GroundTruth tool, or by TelemetryImporter for a
+telemetry-labeled dataset) and reports position error in metres at each
+annotated/ground-truthed frame.
 
 This is the evaluation harness referenced in the project review: without it
 there is no way to tell whether a given estimator/config is actually more
 accurate, only whether it "looks smoother."
+
+STRATEGY.md Phase 0 extended this with A@5/10/20m threshold-accuracy
+(fraction of points within N metres -- mean is dominated by catastrophic
+outliers and hides whether the typical frame is actually good) and
+recall@{1,5,10} (derived from the telemetry's Correct_Candidate_Rank column
+-- was the geometrically correct crop even retrieved, independent of
+whether the fusion layer trusted it). The core comparison logic is exposed
+as compute_stats() so scripts/run_benchmark.py can call it directly across
+multiple flights without reimplementing the ground-truth/telemetry matching.
 
 Usage:
     python3 scripts/evaluate_ground_truth.py \
@@ -53,6 +63,7 @@ def load_telemetry(path):
     rows = []
     with open(path, newline="") as f:
         for r in csv.DictReader(f):
+            rank_s = (r.get("Correct_Candidate_Rank") or "").strip()
             rows.append({
                 "frame": int(r["Frame"]),
                 "raw_lat": float(r["Raw_Lat"]),
@@ -60,12 +71,100 @@ def load_telemetry(path):
                 "filt_lat": float(r["Filtered_Lat"]),
                 "filt_lng": float(r["Filtered_Lng"]),
                 "confidence": float(r["Match_Confidence"]),
+                # Columns below added by STRATEGY.md Phase 0; default gracefully
+                # (None/0) so this script still works against older telemetry CSVs.
+                "outlier_rejected": r.get("Outlier_Rejected") == "1",
+                "inliers": int(r["Inliers"]) if "Inliers" in r and r["Inliers"] != "" else None,
+                "measurement_valid": (r.get("Measurement_Valid") != "0"
+                                       if "Measurement_Valid" in r else True),
+                "correct_candidate_rank": int(rank_s) if rank_s else None,
             })
     return sorted(rows, key=lambda r: r["frame"])
 
 
 def nearest_telemetry_row(telemetry, frame_idx):
     return min(telemetry, key=lambda r: abs(r["frame"] - frame_idx))
+
+
+def error_stats(vals):
+    """Mean/median/max plus A@5/10/20m threshold-accuracy fractions."""
+    vals = sorted(vals)
+    n = len(vals)
+    mean = sum(vals) / n
+    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+    a_at = {t: sum(1 for v in vals if v <= t) / n for t in (5, 10, 20)}
+    return {"mean": mean, "median": median, "max": max(vals), "a_at": a_at}
+
+
+def compute_stats(gt_path, telemetry_path, max_frame_gap=15):
+    """Core ground-truth-vs-telemetry comparison, importable for the aggregate
+    benchmark runner (scripts/run_benchmark.py) as well as this script's own
+    CLI. Returns None if either file has no usable rows; otherwise a dict:
+
+        n, skipped_gap        -- ground-truth points evaluated / skipped
+        raw, filt             -- error_stats() dicts for raw/filtered position
+        recall                -- {1: frac, 5: frac, 10: frac} or None per-k
+                                  if no ranked points exist
+        n_recall              -- ground-truth points with a usable rank
+        outlier_rate          -- fraction of ALL telemetry frames rejected
+                                  as Kalman outliers (not just gt-matched ones)
+        invalid_rate          -- fraction of ALL telemetry frames with
+                                  measurement_valid=0 (no RANSAC-verified
+                                  candidate at all -- distinct from outlier
+                                  rejection, see STRATEGY.md Sec 4.3 #2)
+        total_frames          -- telemetry row count, for context
+        rows                  -- per-point detail (frame/time/label/errors/gap)
+    """
+    gt = load_ground_truth(gt_path)
+    telemetry = load_telemetry(telemetry_path)
+    if not gt or not telemetry:
+        return None
+
+    raw_errors, filt_errors, ranks = [], [], []
+    skipped_gap = 0
+    rows = []
+
+    for pt in gt:
+        row = nearest_telemetry_row(telemetry, pt["frame"])
+        gap = abs(row["frame"] - pt["frame"])
+        raw_err = haversine_flat_m(pt["lat"], pt["lng"], row["raw_lat"], row["raw_lng"])
+        filt_err = haversine_flat_m(pt["lat"], pt["lng"], row["filt_lat"], row["filt_lng"])
+        rows.append({**pt, "gap": gap, "raw_err": raw_err, "filt_err": filt_err,
+                     "confidence": row["confidence"], "rank": row["correct_candidate_rank"]})
+
+        # Points whose nearest telemetry row is beyond max_frame_gap aren't a
+        # real comparison (e.g. a partial/killed run whose telemetry stops
+        # early -- every later ground-truth point would otherwise silently
+        # pair with that same last stale row).
+        if gap > max_frame_gap:
+            skipped_gap += 1
+            continue
+        raw_errors.append(raw_err)
+        filt_errors.append(filt_err)
+        if row["correct_candidate_rank"] is not None:
+            ranks.append(row["correct_candidate_rank"])
+
+    result = {"n": len(raw_errors), "skipped_gap": skipped_gap, "rows": rows}
+    if not raw_errors:
+        return result
+
+    result["raw"] = error_stats(raw_errors)
+    result["filt"] = error_stats(filt_errors)
+
+    result["n_recall"] = len(ranks)
+    result["recall"] = ({k: sum(1 for r in ranks if 0 < r <= k) / len(ranks) for k in (1, 5, 10)}
+                         if ranks else {1: None, 5: None, 10: None})
+
+    total_frames = len(telemetry)
+    outlier_frames = sum(1 for r in telemetry if r["outlier_rejected"])
+    invalid_frames = sum(1 for r in telemetry if not r["measurement_valid"])
+    result["total_frames"] = total_frames
+    result["outlier_frames"] = outlier_frames
+    result["invalid_frames"] = invalid_frames
+    result["outlier_rate"] = outlier_frames / total_frames
+    result["invalid_rate"] = invalid_frames / total_frames
+
+    return result
 
 
 def main():
@@ -77,60 +176,50 @@ def main():
                      help="Warn if nearest telemetry row is more than this many frames away")
     args = ap.parse_args()
 
-    gt = load_ground_truth(args.gt)
-    telemetry = load_telemetry(args.telemetry)
-
-    if not gt:
-        print(f"No ground-truth points in {args.gt}", file=sys.stderr)
-        sys.exit(1)
-    if not telemetry:
-        print(f"No telemetry rows in {args.telemetry}", file=sys.stderr)
+    result = compute_stats(args.gt, args.telemetry, args.max_frame_gap)
+    if result is None:
+        if not load_ground_truth(args.gt):
+            print(f"No ground-truth points in {args.gt}", file=sys.stderr)
+        else:
+            print(f"No telemetry rows in {args.telemetry}", file=sys.stderr)
         sys.exit(1)
 
-    raw_errors, filt_errors = [], []
-    skipped_gap = 0
     print(f"{'Frame':>6} {'Time(s)':>8} {'Label':>14} {'RawErr(m)':>10} {'FiltErr(m)':>11} {'Conf':>6}")
     print("-" * 62)
-
-    for pt in gt:
-        row = nearest_telemetry_row(telemetry, pt["frame"])
-        gap = abs(row["frame"] - pt["frame"])
-        raw_err = haversine_flat_m(pt["lat"], pt["lng"], row["raw_lat"], row["raw_lng"])
-        filt_err = haversine_flat_m(pt["lat"], pt["lng"], row["filt_lat"], row["filt_lng"])
-
-        gap_flag = f"  [gap={gap}f]" if gap > args.max_frame_gap else ""
-        print(f"{pt['frame']:>6} {pt['time_sec']:>8.1f} {pt['label']:>14} "
-              f"{raw_err:>10.1f} {filt_err:>11.1f} {row['confidence']:>6.2f}{gap_flag}")
-
-        # Points whose nearest telemetry row is beyond max_frame_gap aren't a
-        # real comparison (e.g. a partial/killed run whose telemetry stops
-        # early -- every later ground-truth point would otherwise silently
-        # pair with that same last stale row). Shown above for visibility,
-        # excluded here so a partial run's summary reflects only the frames
-        # actually processed, not stale carry-forward matches.
-        if gap > args.max_frame_gap:
-            skipped_gap += 1
-            continue
-        raw_errors.append(raw_err)
-        filt_errors.append(filt_err)
-
-    def stats(vals):
-        vals = sorted(vals)
-        n = len(vals)
-        mean = sum(vals) / n
-        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
-        return mean, median, max(vals)
+    for r in result["rows"]:
+        gap_flag = f"  [gap={r['gap']}f]" if r["gap"] > args.max_frame_gap else ""
+        print(f"{r['frame']:>6} {r['time_sec']:>8.1f} {r['label']:>14} "
+              f"{r['raw_err']:>10.1f} {r['filt_err']:>11.1f} {r['confidence']:>6.2f}{gap_flag}")
 
     print("-" * 62)
-    if raw_errors:
-        raw_mean, raw_median, raw_max = stats(raw_errors)
-        filt_mean, filt_median, filt_max = stats(filt_errors)
-        print(f"{'RAW':>29}   mean={raw_mean:7.1f}m  median={raw_median:7.1f}m  max={raw_max:7.1f}m")
-        print(f"{'FILTERED':>29}   mean={filt_mean:7.1f}m  median={filt_median:7.1f}m  max={filt_max:7.1f}m")
+    if result["n"]:
+        raw, filt = result["raw"], result["filt"]
+
+        def fmt(s):
+            a = s["a_at"]
+            return (f"mean={s['mean']:7.1f}m  median={s['median']:7.1f}m  max={s['max']:7.1f}m  "
+                    f"A@5m={a[5]:5.1%}  A@10m={a[10]:5.1%}  A@20m={a[20]:5.1%}")
+
+        print(f"{'RAW':>10}   {fmt(raw)}")
+        print(f"{'FILTERED':>10}   {fmt(filt)}")
+
+        if result["n_recall"]:
+            rec = result["recall"]
+            fmt_r = lambda v: f"{v:5.1%}" if v is not None else "  n/a"
+            print(f"{'RECALL':>10}   @1={fmt_r(rec[1])}  @5={fmt_r(rec[5])}  @10={fmt_r(rec[10])}"
+                  f"  (n={result['n_recall']} ranked points)")
+        else:
+            print(f"{'RECALL':>10}   n/a (telemetry has no Correct_Candidate_Rank data)")
+
+        print(f"{'OUTLIERS':>10}   {result['outlier_rate']:5.1%} of {result['total_frames']} frames "
+              f"rejected  |  {'INVALID':>7} {result['invalid_rate']:5.1%} (no RANSAC-verified candidate)")
     else:
         print("No ground-truth points within --max-frame-gap of any telemetry row.")
-    print(f"\n{len(raw_errors)} ground-truth point(s) evaluated"
-          f"{f' ({skipped_gap} skipped, nearest telemetry row > {args.max_frame_gap} frames away)' if skipped_gap else ''}.")
+    skip_note = ""
+    if result["skipped_gap"]:
+        skip_note = (f" ({result['skipped_gap']} skipped, nearest telemetry row "
+                     f"> {args.max_frame_gap} frames away)")
+    print(f"\n{result['n']} ground-truth point(s) evaluated{skip_note}.")
 
 
 if __name__ == "__main__":

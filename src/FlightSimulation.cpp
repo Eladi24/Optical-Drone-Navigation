@@ -240,7 +240,7 @@ void runDroneSimulation(
     // Initialize Kalman filter with tuned parameters
     // process_noise: how much we trust the motion model (lower = more trust)
     // measurement_noise: base noise for visual measurements (higher = less trust)
-    DroneKalmanFilter kalman_filter(0.5, 15.0);
+    DroneKalmanFilter kalman_filter(0.5, 15.0, meters_per_degree_lat, meters_per_degree_lng);
     kalman_filter.initialize(start_lat, start_lng, initial_heading, speed);
     
     std::cout << "✓ Kalman Filter initialized" << std::endl;

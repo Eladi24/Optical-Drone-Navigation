@@ -9,9 +9,19 @@ private:
     double process_noise_;
     double measurement_noise_;
     double last_heading_;  // 🆕 Track heading
-    
+
+    // Local geo-referencing scale, required to convert a metres-scale noise
+    // magnitude into the correct per-axis degrees^2 variance (1 degree of
+    // longitude != 1 degree of latitude in metres -- see CLAUDE.md's
+    // anisotropy findings, same bug class already fixed in
+    // generateReferenceCropsGrid()). No default: every caller must supply
+    // the run's actual scale rather than silently assuming one.
+    double meters_per_degree_lat_;
+    double meters_per_degree_lng_;
+
 public:
-    DroneKalmanFilter(double process_noise = 1.0, double measurement_noise = 10.0);
+    DroneKalmanFilter(double process_noise, double measurement_noise,
+                       double meters_per_degree_lat, double meters_per_degree_lng);
     
     // Initialize with first position
     void initialize(double lat, double lng, double heading, double speed);
