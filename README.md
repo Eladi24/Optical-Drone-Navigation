@@ -19,6 +19,10 @@ telemetry-labeled aerial imagery dataset with dense GPS ground truth for quantit
 
 - **Multiple feature-matching algorithms** behind a common interface — ORB, SIFT, AKAZE, Lucas-Kanade
   optical flow, and a hybrid ensemble — selectable per run for direct comparison.
+- **Modular retrieval/matching pipeline**: candidate-crop retrieval and geometric match verification
+  are split behind independent interfaces (`IRetrievalStage`/`IMatchingStage`), so a retrieval or
+  matching implementation can be swapped and benchmarked in isolation — a classical baseline is in
+  place, with a learned retrieval backbone planned next.
 - **Two position-fusion strategies**: a 4-state Kalman filter with adaptive, confidence-weighted
   noise and outlier rejection, and a particle filter maintaining multiple position hypotheses
   simultaneously rather than committing to a single belief.
@@ -44,8 +48,9 @@ Video frame  ->  Preprocessing (CLAHE, mask, GSD normalization)
 ```
 
 Key modules: `ORBFeatureEstimator` / `SIFTFeatureEstimator` / `AKAZEFeatureEstimator` /
-`HybridEstimator` (feature matching), `KalmanFilter` / `ParticleFilter` (position fusion),
-`GlobalLocator` (initial-position search), `VideoProcessing` (the main per-frame pipeline),
+`HybridEstimator` (feature matching), `SplitPipelineEstimator` with `IRetrievalStage` /
+`IMatchingStage` (the modular retrieval/matching split), `KalmanFilter` / `ParticleFilter` (position
+fusion), `GlobalLocator` (initial-position search), `VideoProcessing` (the main per-frame pipeline),
 `TelemetryImporter` / `GroundTruthAnnotator` (ground truth ingestion and evaluation).
 
 ## Tech Stack
@@ -63,12 +68,15 @@ mismatches — that visual inspection alone would not have caught.
 
 Current real-world accuracy is best described as coarse localization (several hundred meters to
 low kilometers) rather than precision positioning. Systematic testing across descriptor choice,
-reference-map resolution, position-fusion strategy, and search strategy narrowed this to a
-structural limitation of matching real aerial camera footage against satellite imagery captured at
-a different time and by a different sensor — a cross-domain image matching problem that remains an
-active research area, not an implementation defect. On synthetic data, where drone and reference
-imagery share an identical source, the same pipeline performs well, which helped isolate the
-real-world gap to content and domain differences rather than the matching algorithms themselves.
+reference-map resolution, position-fusion strategy, and per-stage retrieval/matching instrumentation
+narrowed this to a specific, measured bottleneck: most error originates in candidate retrieval
+(finding the right map region to compare against in the first place), not in verifying a match once
+a candidate is found, or in position fusion. This points to a cross-domain image matching problem —
+real aerial camera footage matched against satellite imagery captured at a different time and by a
+different sensor — that remains an active research area, not an implementation defect. On synthetic
+data, where drone and reference imagery share an identical source, the same pipeline performs well,
+which helped isolate the real-world gap to content and domain differences rather than the matching
+algorithms themselves.
 
 ## Getting Started
 
@@ -85,7 +93,9 @@ An API key is required for the live simulation/Haifa modes (Google Static Maps);
 ## Status
 
 Actively investigated rather than a finished product. The core pipeline, both fusion strategies, and
-the evaluation harness are complete and working; closing the real-world accuracy gap is ongoing,
-with the most promising next steps being a same-domain reference map (built from drone imagery
-rather than satellite tiles) and learned, domain-adapted feature matching in place of classical
-descriptors.
+the evaluation harness are complete and working. A systematic bottleneck diagnosis — instrumenting
+retrieval accuracy independently of match verification and fusion — pinpointed candidate retrieval,
+not feature matching itself, as the dominant source of error. The pipeline is now being restructured
+around that finding: retrieval and matching are split behind independent, swappable interfaces (see
+Features), with a classical baseline validated end-to-end and a learned retrieval backbone the next
+step.
