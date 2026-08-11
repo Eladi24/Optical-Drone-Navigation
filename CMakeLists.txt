@@ -39,6 +39,9 @@ add_library(DroneNavigation
     src/SIFTFeatureEstimator.cpp
     src/HybridEstimator.cpp
     src/AKAZEFeatureEstimator.cpp
+    src/HistogramRetrieval.cpp
+    src/OrbRansacMatching.cpp
+    src/SplitPipelineEstimator.cpp
     
     # Visualization & utilities
     src/Visualization.cpp

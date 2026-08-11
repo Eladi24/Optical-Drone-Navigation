@@ -17,6 +17,9 @@
 #include "SIFTFeatureEstimator.hpp"
 #include "HybridEstimator.hpp"
 #include "AKAZEFeatureEstimator.hpp"
+#include "SplitPipelineEstimator.hpp"
+#include "HistogramRetrieval.hpp"
+#include "OrbRansacMatching.hpp"
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
@@ -31,6 +34,15 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
 
         case PositionAlgorithm::AKAZE:
             return std::make_unique<AKAZEFeatureEstimator>();
+
+        // STRATEGY.md Phase 2: classical (histogram) retrieval + ORB/RANSAC
+        // matching behind the split-pipeline interfaces -- see
+        // CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<GlobalHistogramRetrieval>(),
+                std::make_unique<OrbRansacMatching>(500),
+                "split");
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).

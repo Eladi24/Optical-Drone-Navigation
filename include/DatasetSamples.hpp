@@ -89,5 +89,93 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
     for (auto& s : getFlight03Sample())
         samples.push_back(std::move(s));
 
+    // STRATEGY.md Phase 1 ("clean reference imagery" -- see CLAUDE.md's
+    // Phase 1 Investigation Log entry): same flights, same telemetry, same
+    // assembled video (video_path deliberately points at the SAME cached
+    // .avi as the "uavvisloc_01"/"uavvisloc_03" entries above -- video
+    // assembly is independent of which satellite source is used, and
+    // assembleDatasetVideo() is cached on that path already existing, so
+    // this reuses it instead of re-assembling ~800 images again). Only the
+    // satellite reference map differs: Esri World Imagery instead of the
+    // dataset's own GeoTIFF, fetched via scripts/fetch_esri_imagery.py at
+    // the IDENTICAL bounding box and pixel dimensions (so identical mpp) as
+    // the baseline map it's being compared against -- imagery provenance is
+    // the one deliberately changing variable.
+    //
+    // sample_name deliberately does NOT contain "uavvisloc_01"/"uavvisloc_03"
+    // as a substring: argv[3]'s dataset-mode filter (Main.cpp) does a plain
+    // substring match against sample_name (documented there -- lets
+    // run_benchmark.py pass e.g. "01" to mean flight 01), so a name like
+    // "uavvisloc_01_esri" would silently ALSO match the existing baseline
+    // command `--flights uavvisloc_01,uavvisloc_03`, corrupting reproduction
+    // of the already-recorded Phase 0 baseline. "esri01"/"esri03" avoid that.
+    samples.push_back({
+        "esri01", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/01/drone", "01", 817,
+        "Datasets/UAV_VisLoc_dataset/01/01.csv",
+        "Images/map_clean_esri_01.png",
+        "Datasets/esri_coordinates_range.csv",
+        "esri01",
+        "Videos/dataset_uavvisloc_01.avi",
+    });
+    samples.push_back({
+        "esri03", "uavvisloc",
+        "Datasets/UAV_VisLoc_example/03/drone", "03", 768,
+        "Datasets/UAV_VisLoc_example/03/03.csv",
+        "Images/map_clean_esri_03.png",
+        "Datasets/esri_coordinates_range.csv",
+        "esri03",
+        "Videos/dataset_uavvisloc_03.avi",
+    });
+
+    // STRATEGY.md Phase 2 prerequisite: the 3 validation flights promised by
+    // STRATEGY.md Sec 6.1 ("3 more, choose in Phase 0") but never assigned --
+    // Phase 0 explicitly deferred this. Picked from the 9 remaining UAV-VisLoc
+    // flights by the same altitude-spread AGL-plausibility check that ruled
+    // out flights 05/06/11 when flight 01 was originally chosen as the
+    // second dev flight (large/ambiguous spread -> `height` may be MSL, not
+    // AGL, over mountainous terrain -- would silently corrupt GSD/footprint
+    // math): all of 02/04/07/08/09/10 have tight spreads (<10m) and are
+    // AGL-plausible. Chose 04 (Taizhou-6, 738 frames) -- deliberately the
+    // same broad region as dev flight 03, testing whether a fix that worked
+    // there holds up on a second, independent flight nearby, not just the
+    // one it was tuned against -- plus 08 (Huzhou-3, 1033 frames) and 10
+    // (Huailai, 144 frames, smaller sample but a genuinely new region), both
+    // real generalization tests since neither region appears in the dev set.
+    // Flight 07 (only 30 frames) and 09 (same region as 08) were considered
+    // and passed over -- see CLAUDE.md's Phase 2 Investigation Log for the
+    // full comparison table. Held-out (sealed until Phase 4, per Sec 6.1):
+    // {02, 05, 06, 07, 09, 11} -- note 05/06/11 carry the same
+    // altitude-ambiguity caveat that excluded them here, so Phase 4 should
+    // treat results on those three with that in mind, not as a fresh
+    // problem to solve then.
+    samples.push_back({
+        "uavvisloc_04", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/04/drone", "04", 738,
+        "Datasets/UAV_VisLoc_dataset/04/04.csv",
+        "Images/map_clean_uavvisloc_04.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite04.tif",
+        "Videos/dataset_uavvisloc_04.avi",
+    });
+    samples.push_back({
+        "uavvisloc_08", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/08/drone", "08", 1033,
+        "Datasets/UAV_VisLoc_dataset/08/08.csv",
+        "Images/map_clean_uavvisloc_08.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite08.tif",
+        "Videos/dataset_uavvisloc_08.avi",
+    });
+    samples.push_back({
+        "uavvisloc_10", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/10/drone", "10", 144,
+        "Datasets/UAV_VisLoc_dataset/10/10.csv",
+        "Images/map_clean_uavvisloc_10.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite10.tif",
+        "Videos/dataset_uavvisloc_10.avi",
+    });
+
     return samples;
 }

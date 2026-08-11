@@ -86,13 +86,17 @@ class ORBFeatureEstimator;
 class SIFTFeatureEstimator;
 class HybridEstimator;
 class AKAZEFeatureEstimator;
+class SplitPipelineEstimator;
 
 enum class PositionAlgorithm {
     ORB,
     SIFT,
     HYBRID,
     OPTICAL_FLOW,     // Lucas-Kanade optical flow tracker (Haifa video pipeline)
-    AKAZE
+    AKAZE,
+    SPLIT             // STRATEGY.md Phase 2: SplitPipelineEstimator, classical
+                       // (histogram) retrieval + ORB/RANSAC matching -- see
+                       // CLAUDE.md's Phase 2 Investigation Log
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

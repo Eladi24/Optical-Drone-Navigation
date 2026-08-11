@@ -691,6 +691,8 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::OPTICAL_FLOW;
         else if (algo_str == "akaze" || algo_str == "AKAZE")
             algorithm = PositionAlgorithm::AKAZE;
+        else if (algo_str == "split" || algo_str == "SPLIT")
+            algorithm = PositionAlgorithm::SPLIT;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }
