@@ -52,6 +52,12 @@ TelemetryImportResult importUavVisLocTelemetry(const std::string& csv_path,
 // empty vector if the file doesn't exist or has no rows.
 std::vector<double> loadTelemetryFrameTimes(const std::string& sample_name);
 
+// Same indexing convention as loadTelemetryFrameTimes() above, but reads the
+// Heading (Phi1) column instead of Time_Sec -- for processVideoNavigation()'s
+// frame_headings_deg parameter (STRATEGY.md Phase 2 telemetry-as-prior
+// pre-warp). Returns an empty vector if the file doesn't exist or has no rows.
+std::vector<double> loadTelemetryHeadings(const std::string& sample_name);
+
 // Looks up a satellite map's real-world bounding box from UAV-VisLoc's own
 // satellite_coordinates_range.csv (format: mapname,LT_lat_map,LT_lon_map,
 // RB_lat_map,RB_lon_map,region -- see README_example.txt).

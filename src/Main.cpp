@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <cmath>
+#include <cstdlib>
 #include <sstream>
 #include <iomanip>
 #include <sys/stat.h>
@@ -293,7 +294,8 @@ void runReferenceMatchingPipeline(
     const std::vector<double>* frame_times_sec = nullptr,
     int grid_spacing_meters = 50,
     int start_frame_idx_override = -1,
-    bool use_particle_filter = false)
+    bool use_particle_filter = false,
+    const std::vector<double>* frame_headings_deg = nullptr)
 {
     // ------------------------------------------------------------------
     // Reference crop grid for ORB/SIFT/Hybrid
@@ -398,7 +400,9 @@ void runReferenceMatchingPipeline(
         feature_mask,
         frame_times_sec,
         gt_path.empty() ? nullptr : &gt_path,
-        use_particle_filter);
+        use_particle_filter,
+        /*max_frames_to_process=*/0,
+        frame_headings_deg);
 }
 
 // Runs the full video-navigation pipeline for one Haifa sample: preprocessing
@@ -526,7 +530,8 @@ void runVideoPipelineForSample(const SampleConfig& cfg,
 // after that -- reference crop grid, starting position, matching -- is the
 // same shared runReferenceMatchingPipeline() Haifa uses.
 void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
-                                  PositionAlgorithm algorithm)
+                                  PositionAlgorithm algorithm,
+                                  bool use_heading_prewarp = false)
 {
     std::cout << "\n" << std::string(60, '-') << std::endl;
     std::cout << "Processing dataset sample: " << cfg.sample_name << std::endl;
@@ -644,6 +649,15 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
     // ------------------------------------------------------------------
     std::vector<double> frame_times_sec = loadTelemetryFrameTimes(cfg.sample_name);
 
+    // STRATEGY.md Phase 2 telemetry-as-prior pre-warp: opt-in (default off,
+    // so every existing benchmark stays byte-for-byte reproducible) per-frame
+    // heading, used by processVideoNavigation to north-align the drone crop
+    // before matching. See CLAUDE.md's Phase 2 Investigation Log for the
+    // empirical sign verification.
+    std::vector<double> frame_headings_deg;
+    if (use_heading_prewarp)
+        frame_headings_deg = loadTelemetryHeadings(cfg.sample_name);
+
     // UAV-VisLoc's map covers a much larger real-world area (~7-9km) than
     // Haifa's (~1.5km), so the default 50m grid spacing would generate tens
     // of thousands of reference crops -- 200m keeps the crop count in the
@@ -662,7 +676,8 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
         // Phase 0's gate measures the fixed single-hypothesis Kalman/RANSAC
         // path specifically; leaving this on the particle filter would
         // measure a different, already-characterized code path instead.
-        /*use_particle_filter=*/false);
+        /*use_particle_filter=*/false,
+        frame_headings_deg.empty() ? nullptr : &frame_headings_deg);
 }
 
 int main(int argc, char **argv)
@@ -697,6 +712,8 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::SPLIT_LEARNED_RETRIEVAL;
         else if (algo_str == "split_xfeat" || algo_str == "SPLIT_XFEAT")
             algorithm = PositionAlgorithm::SPLIT_LEARNED_MATCH_XFEAT;
+        else if (algo_str == "split_learned" || algo_str == "SPLIT_LEARNED")
+            algorithm = PositionAlgorithm::SPLIT_LEARNED;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }
@@ -1034,7 +1051,14 @@ int main(int argc, char **argv)
                 cfg.sample_name.find(sample_filter_arg) == std::string::npos)
                 continue;
 
-            runDatasetPipelineForSample(cfg, algorithm);
+            // STRATEGY.md Phase 2 telemetry-as-prior pre-warp: opt-in via env
+            // var (not a CLI flag -- this is a single-variable A/B experiment,
+            // not a permanent user-facing option yet) so the default `d`
+            // pipeline invocation stays byte-for-byte reproducible with every
+            // already-recorded gate result. See CLAUDE.md's Phase 2
+            // Investigation Log for the measured delta.
+            bool use_heading_prewarp = std::getenv("DRONENAV_HEADING_PREWARP") != nullptr;
+            runDatasetPipelineForSample(cfg, algorithm, use_heading_prewarp);
         }
 
         std::cout << "\n" << std::string(80, '=') << std::endl;

@@ -2,6 +2,7 @@
 #include "CoordinateUtils.hpp"
 #include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <iostream>
 
@@ -93,8 +94,19 @@ SIFTFeatureEstimator::getCachedFeatures(const cv::Mat& image) const
         // 365 crops (genuine terrain) sit above 150, many saturating the
         // 500-feature cap entirely. 150 sits in the gap between the two.
         static constexpr size_t MIN_VALID_KEYPOINTS = 150;
+
+        // MIN_CROP_CONTRAST=12: mirrors ORBFeatureEstimator.cpp's identical
+        // fix -- see that file for the full measured rationale (UAV-VisLoc
+        // flight 10's generic-attractor investigation, CLAUDE.md).
+        static constexpr double MIN_CROP_CONTRAST = 12.0;
+        cv::Mat gray;
+        cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+        cv::Scalar mean, stddev;
+        cv::meanStdDev(gray, mean, stddev);
+
         entry.valid = !entry.descriptors.empty() &&
-                      entry.keypoints.size() >= MIN_VALID_KEYPOINTS;
+                      entry.keypoints.size() >= MIN_VALID_KEYPOINTS &&
+                      stddev[0] >= MIN_CROP_CONTRAST;
     }
 
     pthread_rwlock_wrlock(&cache_rwlock_);
@@ -196,8 +208,13 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
     const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>&  last_position)
 {
+    // measurement_valid=false on every early return here mirrors the identical
+    // fix in ORBFeatureEstimator.cpp -- see that file for the full measured
+    // rationale (UAV-VisLoc flight 10's generic-attractor investigation,
+    // CLAUDE.md). SIFT independently duplicated the same gap ORB had: only
+    // the RANSAC-failure exit further down was explicitly marked invalid.
     if (drone_view.empty() || reference_crops.empty())
-        return PositionEstimate(last_position, 0.0, -1);
+        return PositionEstimate(last_position, 0.0, -1, false);
 
     // Extract features from the current drone frame (not cached — changes every call).
     // feature_mask_ excludes logo/subtitle regions set by VideoPreprocessor.
@@ -208,7 +225,7 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
 
     // Fewer than 15 keypoints → featureless water/haze; return low confidence
     if (kp_drone.size() < 15 || desc_drone.empty())
-        return PositionEstimate(last_position, 0.1, -1);
+        return PositionEstimate(last_position, 0.1, -1, false);
 
     // =========================================================================
     // STAGE 1 — Parallel Lowe's ratio test across all candidate crops
@@ -240,7 +257,7 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
             candidates.push_back(std::move(c));
 
     if (candidates.empty())
-        return PositionEstimate(last_position, 0.1, -1);
+        return PositionEstimate(last_position, 0.1, -1, false);
 
     // =========================================================================
     // STAGE 2 — RANSAC homography verification on every Stage-1 candidate

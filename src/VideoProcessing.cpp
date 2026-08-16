@@ -112,7 +112,8 @@ void processVideoNavigation(
     const std::vector<double> *frame_times_sec,
     const std::vector<std::pair<double, double>> *ground_truth_path,
     bool use_particle_filter,
-    int max_frames_to_process)
+    int max_frames_to_process,
+    const std::vector<double> *frame_headings_deg)
 {
     // =========================================================================
     // INITIALIZATION
@@ -405,8 +406,52 @@ void processVideoNavigation(
             // crops' scale (mpp) -- without it, ORB/SIFT would be matching
             // images representing two different real-world footprints.
             if (legacy_crop_roi.width > 0 && legacy_crop_roi.height > 0) {
-                cv::resize(frame(legacy_crop_roi), processed_frame,
-                           cv::Size(legacy_crop_target_px, legacy_crop_target_px));
+                // Telemetry-as-prior pre-warp (STRATEGY.md Phase 2): if a
+                // per-frame heading is available, rotate the crop to
+                // north-up BEFORE handing it to the estimator, so matching
+                // only needs to find a near-identity rotation instead of an
+                // arbitrary one. Sign (+heading via cv::getRotationMatrix2D)
+                // verified empirically against two known-correct UAV-VisLoc
+                // frames -- see CLAUDE.md's Phase 2 Investigation Log.
+                bool have_heading = frame_headings_deg &&
+                    frame_idx < static_cast<int>(frame_headings_deg->size()) &&
+                    std::isfinite((*frame_headings_deg)[frame_idx]);
+
+                bool rotated = false;
+                if (have_heading) {
+                    // Grab a padded (~sqrt(2)x) square ROI around the same
+                    // center so the post-rotation center crop has no blank
+                    // corners -- a plain in-place rotation of the exact
+                    // target crop would introduce black triangular regions
+                    // ORB could latch onto as spurious sharp corners.
+                    int take = legacy_crop_roi.width;
+                    int padded = std::min(static_cast<int>(std::ceil(take * 1.4143)),
+                                           std::min(video_width, video_height));
+                    int ccx = legacy_crop_roi.x + take / 2;
+                    int ccy = legacy_crop_roi.y + take / 2;
+                    cv::Rect padded_roi(ccx - padded / 2, ccy - padded / 2, padded, padded);
+                    padded_roi &= cv::Rect(0, 0, video_width, video_height);
+
+                    if (padded_roi.width == padded && padded_roi.height == padded) {
+                        double heading_deg = (*frame_headings_deg)[frame_idx];
+                        cv::Point2f pcenter(padded_roi.width / 2.0f, padded_roi.height / 2.0f);
+                        cv::Mat rot_matrix = cv::getRotationMatrix2D(pcenter, heading_deg, 1.0);
+                        cv::Mat rotated_padded;
+                        cv::warpAffine(frame(padded_roi), rotated_padded, rot_matrix,
+                                        cv::Size(padded, padded));
+                        cv::Rect center_crop((padded - take) / 2, (padded - take) / 2, take, take);
+                        cv::resize(rotated_padded(center_crop), processed_frame,
+                                   cv::Size(legacy_crop_target_px, legacy_crop_target_px));
+                        rotated = true;
+                    }
+                    // else: padded ROI fell outside the frame (near an edge)
+                    // -- fall through to the unrotated crop below rather than
+                    // skip the frame entirely.
+                }
+                if (!rotated) {
+                    cv::resize(frame(legacy_crop_roi), processed_frame,
+                               cv::Size(legacy_crop_target_px, legacy_crop_target_px));
+                }
             } else {
                 processed_frame = frame.clone();
             }

@@ -3,6 +3,7 @@
 #include "CoordinateUtils.hpp"
 #include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
+#include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <iostream>
 
@@ -115,8 +116,34 @@ ORBFeatureEstimator::getCachedFeatures(const cv::Mat& image) const
         // got through and dominated 20% of frames in testing. 150 sits in
         // the sparse valley between the two populations.
         static constexpr size_t MIN_VALID_KEYPOINTS = 150;
+
+        // MIN_CROP_CONTRAST=12: a second, independent validity check alongside
+        // MIN_VALID_KEYPOINTS -- catches degenerate/artifact crops that still
+        // clear the keypoint threshold. Found via UAV-VisLoc flight 10's
+        // generic-attractor investigation: a near-black patch of the reference
+        // map (grayscale std=2.4-8.6, likely a shadow or GeoTIFF capture
+        // artifact) had enough faint sharp edges to pass MIN_VALID_KEYPOINTS
+        // and won matches against many unrelated real frames. Measured across
+        // flight 10's full 56-crop reference grid: 3 crops sit at std 2.4-8.6
+        // (all visually confirmed near-black/degenerate), then a clean gap
+        // with zero crops in [10,15), then the legitimate population starts
+        // at 15+ -- including genuinely plain-but-real terrain like uniform
+        // tilled fields (std ~16), deliberately NOT excluded by this threshold
+        // (same "don't trade a false-attractor problem for an invisible
+        // coverage problem" caution as MIN_VALID_KEYPOINTS's own tuning). 12
+        // sits in the gap between the two populations. Grayscale std dev also
+        // naturally catches a uniform-WHITE degenerate patch (e.g. overexposure
+        // or cloud), not just uniform-black, since both have low std regardless
+        // of mean brightness -- one check covers both directions.
+        static constexpr double MIN_CROP_CONTRAST = 12.0;
+        cv::Mat gray;
+        cv::cvtColor(image, gray, cv::COLOR_BGR2GRAY);
+        cv::Scalar mean, stddev;
+        cv::meanStdDev(gray, mean, stddev);
+
         entry.valid = !entry.descriptors.empty() &&
-                      entry.keypoints.size() >= MIN_VALID_KEYPOINTS;
+                      entry.keypoints.size() >= MIN_VALID_KEYPOINTS &&
+                      stddev[0] >= MIN_CROP_CONTRAST;
     }
 
     pthread_rwlock_wrlock(&cache_rwlock_);
@@ -234,8 +261,24 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>&  last_position)
 {
+    // The 4th (measurement_valid=false) argument on every early return in this
+    // function matters, not just documentation: three of these four "no real
+    // measurement" exits (this one, insufficient drone keypoints, and empty
+    // Stage-1 candidates below) were found to be silently defaulting to
+    // measurement_valid=true (PositionEstimate's 3-arg constructor doesn't
+    // touch it) -- only the RANSAC-failure exit further down was explicitly
+    // fixed in STRATEGY.md Phase 0. Found via UAV-VisLoc flight 10's
+    // generic-attractor investigation: its telemetry showed confidence=0.3,
+    // best_match_idx=-1 rows (the empty-Stage-1-candidates case) logged as
+    // Measurement_Valid=1, meaning the stale last_position these exits return
+    // was being fed to the Kalman filter as if it were a fresh measurement --
+    // producing a hollow near-zero innovation (comparing the filter's own
+    // recent output back to itself) that looks like confirmation without
+    // being one, exactly the "innovation is not an accuracy signal" trap
+    // already documented in CLAUDE.md's Key Design Decisions. See CLAUDE.md's
+    // Investigation Log for the measured before/after impact.
     if (drone_view.empty() || reference_crops.empty())
-        return PositionEstimate(last_position, 0.0, -1);
+        return PositionEstimate(last_position, 0.0, -1, false);
 
     // Extract features from the current drone frame.
     // Not cached — the drone view changes on every call.
@@ -246,7 +289,7 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
     orb_detector_->detectAndCompute(drone_view, mask_input, kp_drone, desc_drone);
 
     if (kp_drone.size() < 10 || desc_drone.empty())
-        return PositionEstimate(last_position, 0.3, -1);
+        return PositionEstimate(last_position, 0.3, -1, false);
 
     // =========================================================================
     // STAGE 1 — Parallel Lowe's ratio test across all candidate crops
@@ -289,7 +332,7 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
             candidates.push_back(std::move(c));
 
     if (candidates.empty())
-        return PositionEstimate(last_position, 0.3, -1);
+        return PositionEstimate(last_position, 0.3, -1, false);
 
     // =========================================================================
     // STAGE 2 — RANSAC homography verification on every Stage-1 candidate

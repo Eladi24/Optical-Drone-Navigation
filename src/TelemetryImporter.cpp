@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -124,6 +125,30 @@ std::vector<double> loadTelemetryFrameTimes(const std::string& sample_name) {
         times[idx] = time_sec;
     }
     return times;
+}
+
+std::vector<double> loadTelemetryHeadings(const std::string& sample_name) {
+    std::vector<double> headings;
+    std::ifstream in("CSV Files/telemetry_" + sample_name + ".csv");
+    if (!in.is_open()) return headings;
+
+    std::string header;
+    std::getline(in, header);   // Frame,Time_Sec,Lat,Lng,Alt,Heading
+
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        std::vector<std::string> f = splitCsvLine(line);
+        if (f.size() < 6) continue;
+        int frame = std::stoi(f[0]);
+        double heading_deg = std::stod(f[5]);
+        int idx = frame - 1;   // Frame is 1-based; frame_headings_deg is 0-based
+        if (idx < 0) continue;
+        if (static_cast<int>(headings.size()) <= idx)
+            headings.resize(idx + 1, std::numeric_limits<double>::quiet_NaN());
+        headings[idx] = heading_deg;
+    }
+    return headings;
 }
 
 SatelliteBounds readUavVisLocSatelliteBounds(const std::string& coords_csv_path,

@@ -72,6 +72,20 @@ std::vector<ReferenceCrop> generateReferenceCropsGrid(
  *                      map-building vs. query frame ranges for the proposed
  *                      same-domain self-referential experiment, which itself
  *                      has not been implemented yet.
+ * @param frame_headings_deg  Optional per-frame compass heading (degrees,
+ *                      clockwise from north -- CoordinateUtils::calculateHeading's
+ *                      own convention, cross-checked against this dataset's
+ *                      Phi1 in the Phase A1 experiment) indexed by frame_idx.
+ *                      When supplied (telemetry-labeled dataset flights only
+ *                      -- Haifa/sim have no heading data), the ORB/SIFT/split
+ *                      drone-frame crop is rotated to north-up BEFORE being
+ *                      handed to the estimator, so matching only has to find
+ *                      a near-identity rotation instead of an arbitrary one.
+ *                      Sign verified empirically (not assumed) against two
+ *                      independent known-correct UAV-VisLoc frames -- see
+ *                      CLAUDE.md's Phase 2 telemetry-as-prior Investigation
+ *                      Log entry. Null preserves existing behavior exactly
+ *                      (no rotation applied).
  */
 void processVideoNavigation(
     const std::string& video_path,
@@ -95,5 +109,6 @@ void processVideoNavigation(
     const std::vector<double>* frame_times_sec = nullptr,
     const std::vector<std::pair<double, double>>* ground_truth_path = nullptr,
     bool use_particle_filter = false,
-    int max_frames_to_process = 0
+    int max_frames_to_process = 0,
+    const std::vector<double>* frame_headings_deg = nullptr
 );

@@ -36,8 +36,8 @@ struct PositionEstimate {
     bool measurement_valid = true;
 
     PositionEstimate() : position({0.0, 0.0}), confidence(0.0), best_match_idx(-1) {}
-    PositionEstimate(std::pair<double, double> pos, double conf, int idx = -1)
-        : position(pos), confidence(conf), best_match_idx(idx) {}
+    PositionEstimate(std::pair<double, double> pos, double conf, int idx = -1, bool valid = true)
+        : position(pos), confidence(conf), best_match_idx(idx), measurement_valid(valid) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -102,12 +102,18 @@ enum class PositionAlgorithm {
                        // matching held constant -- isolates the retrieval
                        // variable against SPLIT's already-recorded baseline.
                        // See CLAUDE.md's Phase 2 Investigation Log.
-    SPLIT_LEARNED_MATCH_XFEAT  // STRATEGY.md Phase 2: SplitPipelineEstimator,
+    SPLIT_LEARNED_MATCH_XFEAT, // STRATEGY.md Phase 2: SplitPipelineEstimator,
                        // classical (histogram) retrieval held constant +
                        // learned (XFeat/ONNX) matching -- isolates the
                        // matching variable against SPLIT's baseline, the
                        // complementary comparison to SPLIT_LEARNED_RETRIEVAL
                        // above. See CLAUDE.md's Phase 2 Investigation Log.
+    SPLIT_LEARNED      // STRATEGY.md Phase 2: SplitPipelineEstimator, BOTH
+                       // learned stages combined -- DeiT-Tiny/ONNX retrieval
+                       // + XFeat/ONNX matching. Not a new variable in
+                       // isolation; combines the two already-isolated wins
+                       // above to see whether they compound. See CLAUDE.md's
+                       // Phase 2 Investigation Log.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

@@ -69,6 +69,16 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<XFeatMatching>(),
                 "split_xfeat");
 
+        // STRATEGY.md Phase 2: combines both individually-measured learned
+        // wins (SPLIT_LEARNED_RETRIEVAL's DeiT retrieval + SPLIT_LEARNED_MATCH_XFEAT's
+        // XFeat matching) into one estimator, to see whether the two partial
+        // improvements compound. See CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT_LEARNED:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>(),
+                std::make_unique<XFeatMatching>(),
+                "split_learned");
+
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
         // createPositionEstimator should never be called for it — fall through
