@@ -20,6 +20,8 @@
 #include "SplitPipelineEstimator.hpp"
 #include "HistogramRetrieval.hpp"
 #include "OrbRansacMatching.hpp"
+#include "OnnxDeitRetrieval.hpp"
+#include "XFeatMatching.hpp"
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
@@ -43,6 +45,29 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<GlobalHistogramRetrieval>(),
                 std::make_unique<OrbRansacMatching>(500),
                 "split");
+
+        // STRATEGY.md Phase 2 learned retrieval: swaps ONLY the retrieval
+        // stage (classical histogram -> frozen DeiT-Tiny/ONNX embeddings),
+        // matching stage held at the same OrbRansacMatching as "split" so
+        // this isolates exactly one variable against that already-recorded
+        // baseline. See CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT_LEARNED_RETRIEVAL:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>(),
+                std::make_unique<OrbRansacMatching>(500),
+                "split_deit");
+
+        // STRATEGY.md Phase 2 learned matching: swaps ONLY the matching
+        // stage (classical ORB/RANSAC -> XFeat/ONNX local features + the
+        // same NN+ratio+RANSAC verification), retrieval held at the same
+        // GlobalHistogramRetrieval as "split" so this isolates exactly one
+        // variable -- the complementary comparison to SPLIT_LEARNED_RETRIEVAL
+        // above. See CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT_LEARNED_MATCH_XFEAT:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<GlobalHistogramRetrieval>(),
+                std::make_unique<XFeatMatching>(),
+                "split_xfeat");
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).

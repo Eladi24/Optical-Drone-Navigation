@@ -94,9 +94,20 @@ enum class PositionAlgorithm {
     HYBRID,
     OPTICAL_FLOW,     // Lucas-Kanade optical flow tracker (Haifa video pipeline)
     AKAZE,
-    SPLIT             // STRATEGY.md Phase 2: SplitPipelineEstimator, classical
+    SPLIT,            // STRATEGY.md Phase 2: SplitPipelineEstimator, classical
                        // (histogram) retrieval + ORB/RANSAC matching -- see
                        // CLAUDE.md's Phase 2 Investigation Log
+    SPLIT_LEARNED_RETRIEVAL, // STRATEGY.md Phase 2: SplitPipelineEstimator,
+                       // learned (DeiT-Tiny/ONNX) retrieval + ORB/RANSAC
+                       // matching held constant -- isolates the retrieval
+                       // variable against SPLIT's already-recorded baseline.
+                       // See CLAUDE.md's Phase 2 Investigation Log.
+    SPLIT_LEARNED_MATCH_XFEAT  // STRATEGY.md Phase 2: SplitPipelineEstimator,
+                       // classical (histogram) retrieval held constant +
+                       // learned (XFeat/ONNX) matching -- isolates the
+                       // matching variable against SPLIT's baseline, the
+                       // complementary comparison to SPLIT_LEARNED_RETRIEVAL
+                       // above. See CLAUDE.md's Phase 2 Investigation Log.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

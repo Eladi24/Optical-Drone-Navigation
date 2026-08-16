@@ -14,8 +14,15 @@ STRATEGY.md Phase 0 extended this with A@5/10/20m threshold-accuracy
 outliers and hides whether the typical frame is actually good) and
 recall@{1,5,10} (derived from the telemetry's Correct_Candidate_Rank column
 -- was the geometrically correct crop even retrieved, independent of
-whether the fusion layer trusted it). The core comparison logic is exposed
-as compute_stats() so scripts/run_benchmark.py can call it directly across
+whether the fusion layer trusted it). STRATEGY.md's Phase 2 learned-retrieval
+pass added PDM@K (Top{1,5,10}_Min_Dist_M columns): the minimum ground-truth
+distance among the top-K score-ranked candidates -- "if a perfect downstream
+selector always picked the best of the top-K, what's the position error."
+NOTE: this is this project's own labeled INTERPRETATION of AnyVisLoc's
+PDM@K, in its stated spirit (recall@K is binary and throws away how close a
+near-miss was), not a verified reproduction of their exact published
+formula -- see CLAUDE.md. The core comparison logic is exposed as
+compute_stats() so scripts/run_benchmark.py can call it directly across
 multiple flights without reimplementing the ground-truth/telemetry matching.
 
 Usage:
@@ -43,6 +50,11 @@ def haversine_flat_m(lat1, lng1, lat2, lng2):
     dlat = (lat2 - lat1) * M_PER_DEG_LAT
     dlng = (lng2 - lng1) * m_per_deg_lng((lat1 + lat2) / 2.0)
     return math.hypot(dlat, dlng)
+
+
+def _float_or_none(s):
+    s = (s or "").strip()
+    return float(s) if s else None
 
 
 def load_ground_truth(path):
@@ -78,6 +90,11 @@ def load_telemetry(path):
                 "measurement_valid": (r.get("Measurement_Valid") != "0"
                                        if "Measurement_Valid" in r else True),
                 "correct_candidate_rank": int(rank_s) if rank_s else None,
+                # PDM@K proxy columns (STRATEGY.md Phase 2) -- blank/absent on
+                # older telemetry CSVs, same graceful-default pattern as above.
+                "top1_min_dist": _float_or_none(r.get("Top1_Min_Dist_M")),
+                "top5_min_dist": _float_or_none(r.get("Top5_Min_Dist_M")),
+                "top10_min_dist": _float_or_none(r.get("Top10_Min_Dist_M")),
             })
     return sorted(rows, key=lambda r: r["frame"])
 
@@ -121,6 +138,7 @@ def compute_stats(gt_path, telemetry_path, max_frame_gap=15):
         return None
 
     raw_errors, filt_errors, ranks = [], [], []
+    pdm_dists = {1: [], 5: [], 10: []}
     skipped_gap = 0
     rows = []
 
@@ -130,7 +148,9 @@ def compute_stats(gt_path, telemetry_path, max_frame_gap=15):
         raw_err = haversine_flat_m(pt["lat"], pt["lng"], row["raw_lat"], row["raw_lng"])
         filt_err = haversine_flat_m(pt["lat"], pt["lng"], row["filt_lat"], row["filt_lng"])
         rows.append({**pt, "gap": gap, "raw_err": raw_err, "filt_err": filt_err,
-                     "confidence": row["confidence"], "rank": row["correct_candidate_rank"]})
+                     "confidence": row["confidence"], "rank": row["correct_candidate_rank"],
+                     "top1_min_dist": row["top1_min_dist"], "top5_min_dist": row["top5_min_dist"],
+                     "top10_min_dist": row["top10_min_dist"]})
 
         # Points whose nearest telemetry row is beyond max_frame_gap aren't a
         # real comparison (e.g. a partial/killed run whose telemetry stops
@@ -143,6 +163,9 @@ def compute_stats(gt_path, telemetry_path, max_frame_gap=15):
         filt_errors.append(filt_err)
         if row["correct_candidate_rank"] is not None:
             ranks.append(row["correct_candidate_rank"])
+        for k, key in ((1, "top1_min_dist"), (5, "top5_min_dist"), (10, "top10_min_dist")):
+            if row[key] is not None:
+                pdm_dists[k].append(row[key])
 
     result = {"n": len(raw_errors), "skipped_gap": skipped_gap, "rows": rows}
     if not raw_errors:
@@ -154,6 +177,20 @@ def compute_stats(gt_path, telemetry_path, max_frame_gap=15):
     result["n_recall"] = len(ranks)
     result["recall"] = ({k: sum(1 for r in ranks if 0 < r <= k) / len(ranks) for k in (1, 5, 10)}
                          if ranks else {1: None, 5: None, 10: None})
+
+    # PDM@K proxy (see module docstring caveat) -- mean/median of the
+    # min-distance-among-top-K values, per K; None for a K with no data
+    # (e.g. older telemetry CSVs, or fewer than K candidates every frame).
+    def _mean_median(vals):
+        if not vals:
+            return None
+        vals = sorted(vals)
+        n = len(vals)
+        mean = sum(vals) / n
+        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+        return {"mean": mean, "median": median, "n": n}
+
+    result["pdm_at_k"] = {k: _mean_median(pdm_dists[k]) for k in (1, 5, 10)}
 
     total_frames = len(telemetry)
     outlier_frames = sum(1 for r in telemetry if r["outlier_rejected"])
@@ -210,6 +247,15 @@ def main():
                   f"  (n={result['n_recall']} ranked points)")
         else:
             print(f"{'RECALL':>10}   n/a (telemetry has no Correct_Candidate_Rank data)")
+
+        pdm = result["pdm_at_k"]
+        if any(pdm[k] for k in (1, 5, 10)):
+            fmt_pdm = lambda d: f"{d['mean']:.1f}m/{d['median']:.1f}m (n={d['n']})" if d else "n/a"
+            print(f"{'PDM@K (proxy)':>10}   @1={fmt_pdm(pdm[1])}  @5={fmt_pdm(pdm[5])}  @10={fmt_pdm(pdm[10])}"
+                  f"  [mean/median min-dist-in-top-K; this project's own interpretation of AnyVisLoc's"
+                  f" PDM@K, not a verified reproduction -- see CLAUDE.md]")
+        else:
+            print(f"{'PDM@K':>10}   n/a (telemetry has no Top{{1,5,10}}_Min_Dist_M data)")
 
         print(f"{'OUTLIERS':>10}   {result['outlier_rate']:5.1%} of {result['total_frames']} frames "
               f"rejected  |  {'INVALID':>7} {result['invalid_rate']:5.1%} (no RANSAC-verified candidate)")

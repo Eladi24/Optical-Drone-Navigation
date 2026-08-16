@@ -693,6 +693,10 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::AKAZE;
         else if (algo_str == "split" || algo_str == "SPLIT")
             algorithm = PositionAlgorithm::SPLIT;
+        else if (algo_str == "split_deit" || algo_str == "SPLIT_DEIT")
+            algorithm = PositionAlgorithm::SPLIT_LEARNED_RETRIEVAL;
+        else if (algo_str == "split_xfeat" || algo_str == "SPLIT_XFEAT")
+            algorithm = PositionAlgorithm::SPLIT_LEARNED_MATCH_XFEAT;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }

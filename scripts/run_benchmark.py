@@ -57,10 +57,21 @@ def fmt_pct(v):
     return f"{v:5.1%}" if v is not None else "  n/a"
 
 
+def fmt_pdm5(pdm_at_k):
+    """PDM@5 median only (STRATEGY.md Sec 7's PDM@K proxy -- see
+    evaluate_ground_truth.py's docstring caveat: this project's own
+    interpretation, not a verified reproduction of AnyVisLoc's exact
+    formula). Full PDM@{1,5,10} mean/median is available per-flight via
+    evaluate_ground_truth.py directly; this table stays compact with just
+    the one column most directly paired with the existing R@5 column."""
+    d = pdm_at_k.get(5) if pdm_at_k else None
+    return f"{d['median']:>6.0f}m" if d else "   n/a"
+
+
 def print_table(rows, combined):
     header = (f"{'Flight':<16} {'n':>4} {'RawMean':>9} {'RawMed':>8} {'FiltMean':>9} {'FiltMed':>8} "
               f"{'A@5m':>6} {'A@10m':>6} {'A@20m':>6} {'R@1':>6} {'R@5':>6} {'R@10':>6} "
-              f"{'Outlier':>8} {'Invalid':>8}")
+              f"{'PDM@5':>7} {'Outlier':>8} {'Invalid':>8}")
     print(header)
     print("-" * len(header))
     for name, r in rows:
@@ -72,6 +83,7 @@ def print_table(rows, combined):
               f"{filt['mean']:>8.1f}m {filt['median']:>7.1f}m "
               f"{filt['a_at'][5]:>6.1%} {filt['a_at'][10]:>6.1%} {filt['a_at'][20]:>6.1%} "
               f"{fmt_pct(rec[1])} {fmt_pct(rec[5])} {fmt_pct(rec[10])} "
+              f"{fmt_pdm5(r.get('pdm_at_k'))} "
               f"{r['outlier_rate']:>7.1%} {r['invalid_rate']:>7.1%}")
     print("-" * len(header))
     if combined:
@@ -80,6 +92,7 @@ def print_table(rows, combined):
               f"{filt['mean']:>8.1f}m {filt['median']:>7.1f}m "
               f"{filt['a_at'][5]:>6.1%} {filt['a_at'][10]:>6.1%} {filt['a_at'][20]:>6.1%} "
               f"{fmt_pct(rec[1])} {fmt_pct(rec[5])} {fmt_pct(rec[10])} "
+              f"{fmt_pdm5(combined.get('pdm_at_k'))} "
               f"{combined['outlier_rate']:>7.1%} {combined['invalid_rate']:>7.1%}")
 
 
@@ -88,6 +101,7 @@ def combine(results, max_frame_gap):
     averaging each flight's already-summarized mean/median (which would
     silently misweight flights with different point counts)."""
     pooled_raw, pooled_filt, pooled_ranks = [], [], []
+    pooled_pdm = {1: [], 5: [], 10: []}
     total_frames = total_outlier = total_invalid = 0
 
     for r in results:
@@ -100,6 +114,9 @@ def combine(results, max_frame_gap):
             pooled_filt.append(row["filt_err"])
             if row["rank"] is not None:
                 pooled_ranks.append(row["rank"])
+            for k, key in ((1, "top1_min_dist"), (5, "top5_min_dist"), (10, "top10_min_dist")):
+                if row.get(key) is not None:
+                    pooled_pdm[k].append(row[key])
         total_frames += r["total_frames"]
         total_outlier += r["outlier_frames"]
         total_invalid += r["invalid_frames"]
@@ -110,11 +127,21 @@ def combine(results, max_frame_gap):
     recall = ({k: sum(1 for x in pooled_ranks if 0 < x <= k) / len(pooled_ranks) for k in (1, 5, 10)}
               if pooled_ranks else {1: None, 5: None, 10: None})
 
+    def _mean_median(vals):
+        if not vals:
+            return None
+        vals = sorted(vals)
+        n = len(vals)
+        mean = sum(vals) / n
+        median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+        return {"mean": mean, "median": median, "n": n}
+
     return {
         "n": len(pooled_raw),
         "raw": evaluate_ground_truth.error_stats(pooled_raw),
         "filt": evaluate_ground_truth.error_stats(pooled_filt),
         "recall": recall,
+        "pdm_at_k": {k: _mean_median(pooled_pdm[k]) for k in (1, 5, 10)},
         "outlier_rate": total_outlier / total_frames if total_frames else None,
         "invalid_rate": total_invalid / total_frames if total_frames else None,
     }

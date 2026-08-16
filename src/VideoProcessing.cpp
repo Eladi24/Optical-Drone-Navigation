@@ -8,6 +8,8 @@
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
+#include <limits>
+#include <sstream>
 #include <sys/stat.h>
 
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
@@ -313,7 +315,8 @@ void processVideoNavigation(
     telemetry_file << "Frame,Time_Sec,Raw_Lat,Raw_Lng,Predicted_Lat,Predicted_Lng,"
                    << "Filtered_Lat,Filtered_Lng,Match_Confidence,Innovation_M,"
                    << "Outlier_Rejected,Best_Match_Idx,Algorithm,"
-                   << "Inliers,Measurement_Valid,Correct_Candidate_Rank\n";
+                   << "Inliers,Measurement_Valid,Correct_Candidate_Rank,"
+                   << "Top1_Min_Dist_M,Top5_Min_Dist_M,Top10_Min_Dist_M\n";
 
     // =========================================================================
     // TRAJECTORY STORAGE
@@ -482,8 +485,20 @@ void processVideoNavigation(
         // frame) written as blank in the CSV. recall@k for any k is then
         // just 0 < rank <= k -- more informative than baking in fixed
         // recall@{1,5,10} boolean columns.
+        //
+        // PDM@K (STRATEGY.md Sec 7's PDM@K -- an honestly-scoped INTERPRETATION
+        // of AnyVisLoc's stated purpose, not a verified reproduction of their
+        // exact published formula; see CLAUDE.md): recall@k is binary (was the
+        // correct crop literally in the top-k) and throws away how close a
+        // near-miss was. For K in {1,5,10}, track the minimum ground-truth
+        // distance among the top-K candidates by score -- "if a perfect
+        // downstream selector always picked the best of the top-K, what's the
+        // position error." -1.0 sentinel (blank CSV cell) when not computable
+        // this frame. Reuses the same score-sorted candidate list the rank
+        // computation above already builds -- no extra sort needed.
         // =====================================================================
         int correct_candidate_rank = -2;  // sentinel: no ground truth this frame
+        double top1_min_dist = -1.0, top5_min_dist = -1.0, top10_min_dist = -1.0;
         if (has_gt_this_frame && !estimate.candidates.empty()) {
             auto sorted_candidates = estimate.candidates;
             std::sort(sorted_candidates.begin(), sorted_candidates.end(),
@@ -491,14 +506,19 @@ void processVideoNavigation(
 
             const std::pair<double, double>& true_pos = (*ground_truth_path)[frame_idx];
             correct_candidate_rank = -1;  // no qualifying candidate found
+            double running_min_dist = std::numeric_limits<double>::max();
             for (size_t i = 0; i < sorted_candidates.size(); ++i) {
                 double dist = CoordinateUtils::calculateDistance(
                     sorted_candidates[i].first, true_pos,
                     meters_per_degree_lat, meters_per_degree_lng);
-                if (dist <= kReferenceCropMeters / 2.0) {
+                if (dist <= kReferenceCropMeters / 2.0 && correct_candidate_rank == -1) {
                     correct_candidate_rank = static_cast<int>(i) + 1;
-                    break;
                 }
+                running_min_dist = std::min(running_min_dist, dist);
+                bool is_last = (i + 1 == sorted_candidates.size());
+                if (i == 0)                top1_min_dist  = running_min_dist;
+                if (i == 4 || is_last)      top5_min_dist  = running_min_dist;
+                if (i == 9 || is_last)      top10_min_dist = running_min_dist;
             }
         } else if (has_gt_this_frame) {
             correct_candidate_rank = -1;  // had ground truth, but no surviving candidates at all
@@ -597,6 +617,12 @@ void processVideoNavigation(
         // =====================================================================
         // TELEMETRY
         // =====================================================================
+        auto fmt_dist_or_blank = [](double d) -> std::string {
+            if (d < 0) return "";
+            std::ostringstream oss;
+            oss << std::fixed << std::setprecision(2) << d;
+            return oss.str();
+        };
         telemetry_file
             << frame_idx << ","
             << std::fixed << std::setprecision(2) << time_sec << ","
@@ -611,7 +637,10 @@ void processVideoNavigation(
             << algorithm_name << ","
             << estimate.inliers << ","
             << (estimate.measurement_valid ? "1" : "0") << ","
-            << (correct_candidate_rank == -2 ? "" : std::to_string(correct_candidate_rank)) << "\n";
+            << (correct_candidate_rank == -2 ? "" : std::to_string(correct_candidate_rank)) << ","
+            << fmt_dist_or_blank(top1_min_dist)  << ","
+            << fmt_dist_or_blank(top5_min_dist)  << ","
+            << fmt_dist_or_blank(top10_min_dist) << "\n";
         // Flushed every frame (not just at loop exit) so a run that's killed
         // partway through -- e.g. for a quick "run ~1 min, inspect partial
         // results" iteration check -- doesn't lose buffered-but-unwritten
