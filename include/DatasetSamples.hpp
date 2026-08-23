@@ -21,7 +21,7 @@ struct DatasetSampleConfig {
     std::string sample_name;     // e.g. "uavvisloc_03" -- keys ground_truth_*.csv etc.
     std::string location_name;   // e.g. "uavvisloc"
 
-    // UAV-VisLoc flight folder layout (see Datasets/UAV_VisLoc_example/README_example.txt):
+    // UAV-VisLoc flight folder layout (see Datasets/UAV_VisLoc_dataset/README_dataset.txt):
     std::string image_dir;       // .../<flight>/drone
     std::string image_prefix;    // "<flight>", e.g. "03" -- files are <prefix>_%04d.JPG
     int         frame_count;     // number of drone images in the flight
@@ -47,13 +47,21 @@ struct DatasetSampleConfig {
 // slower than flight 01's; that's expected, not a regression. Its own
 // pre-fix baseline numbers are already captured in CLAUDE.md's Investigation
 // Log for comparison against the Phase 0 fixes.
+//
+// Points at the full UAV_VisLoc_dataset bundle, not the old 2GB
+// UAV_VisLoc_example sample tier (that folder was deleted as part of the
+// consolidation flagged in CLAUDE.md's "What Still Needs to Be Done" #9 --
+// this left the config dangling until fixed here) -- map_name follows the
+// full bundle's "satelliteNN.tif" convention, not the example tier's bare
+// "NN.tif" (see the flight 01 comment below for why that distinction
+// matters).
 inline std::vector<DatasetSampleConfig> getFlight03Sample() { return {{
     "uavvisloc_03", "uavvisloc",
-    "Datasets/UAV_VisLoc_example/03/drone", "03", 768,
-    "Datasets/UAV_VisLoc_example/03/03.csv",
+    "Datasets/UAV_VisLoc_dataset/03/drone", "03", 768,
+    "Datasets/UAV_VisLoc_dataset/03/03.csv",
     "Images/map_clean_uavvisloc_03.png",  // ~1.19 m/px -- see flight 01's comment below re: reverting from _fine
-    "Datasets/UAV_VisLoc_example/satellite_ coordinates_range.csv",
-    "03.tif",
+    "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+    "satellite03.tif",
     "Videos/dataset_uavvisloc_03.avi",
 }}; }
 
@@ -120,8 +128,8 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
     });
     samples.push_back({
         "esri03", "uavvisloc",
-        "Datasets/UAV_VisLoc_example/03/drone", "03", 768,
-        "Datasets/UAV_VisLoc_example/03/03.csv",
+        "Datasets/UAV_VisLoc_dataset/03/drone", "03", 768,
+        "Datasets/UAV_VisLoc_dataset/03/03.csv",
         "Images/map_clean_esri_03.png",
         "Datasets/esri_coordinates_range.csv",
         "esri03",

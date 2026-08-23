@@ -9,9 +9,9 @@ from the flight's own metadata CSV.
 
 Usage:
     python3 scripts/make_flight_video.py \
-        --image-dir "Datasets/UAV_VisLoc_example/03/drone" \
+        --image-dir "Datasets/UAV_VisLoc_dataset/03/drone" \
         --prefix 03 --frame-count 768 \
-        --telemetry-csv "Datasets/UAV_VisLoc_example/03/03.csv" \
+        --telemetry-csv "Datasets/UAV_VisLoc_dataset/03/03.csv" \
         --out "Videos/flight_03_fun.mp4" --fps 24 --width 1280
 """
 import argparse

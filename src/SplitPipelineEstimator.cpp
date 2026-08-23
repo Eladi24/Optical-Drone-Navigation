@@ -39,12 +39,18 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
     const std::vector<ReferenceCrop>& reference_crops,
     const std::pair<double, double>& last_position)
 {
-    if (drone_view.empty() || reference_crops.empty())
-        return PositionEstimate(last_position, 0.0, -1);
+    if (drone_view.empty() || reference_crops.empty()) {
+        PositionEstimate result(last_position, 0.0, -1);
+        result.measurement_valid = false;
+        return result;
+    }
 
     std::vector<int> candidate_indices = retrieval_->retrieve(drone_view, top_k_);
-    if (candidate_indices.empty())
-        return PositionEstimate(last_position, 0.3, -1);
+    if (candidate_indices.empty()) {
+        PositionEstimate result(last_position, 0.3, -1);
+        result.measurement_valid = false;
+        return result;
+    }
 
     int best_idx     = -1;
     int best_inliers = 0;

@@ -37,8 +37,8 @@ is a true constant, 111320) as the reference scale.
 
 Usage:
     python3 scripts/convert_uavvisloc_satellite.py \
-        --tif "Datasets/UAV_VisLoc_example/03/satellite03.tif" \
-        --coords-csv "Datasets/UAV_VisLoc_example/satellite_ coordinates_range.csv" \
+        --tif "Datasets/UAV_VisLoc_dataset/03/satellite03.tif" \
+        --coords-csv "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv" \
         --mapname satellite03.tif \
         --out "Images/map_clean_uavvisloc_03.png"
 """
