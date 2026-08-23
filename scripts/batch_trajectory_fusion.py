@@ -37,6 +37,24 @@ IPositionEstimator, no live pipeline integration. Mirrors how this project alrea
 prototyped the same-domain experiment and the clustering-assumption check as
 standalone diagnostics before (if ever) wiring them into the live pipeline.
 
+STEP 2 (added this pass): STRATEGY.md's second batch-estimator sub-task, "sliding-window
+refinement via bounded weighted Procrustes updates". Step 1's per-axis LOESS fit smooths
+x(t) and y(t) completely independently, so nothing in it can express or correct a
+*rotational* misalignment -- only independent per-axis translational bias. This adds
+`windowed_procrustes_refine()`: within overlapping time windows (WINDOW_S, 50% stride) over
+Step 1's already-fitted curve, solve a weighted RIGID (rotation + translation, no scale --
+both point sets are already in real-world metres, and STRATEGY.md's resolution-gap
+experiment already ruled out a scale/resolution effect) alignment via closed-form weighted
+Kabsch/SVD between Step 1's fitted points and that window's raw matches, wrapped in a small
+IRLS loop (reusing tukey_biweight) so within-window outliers get down-weighted the same way
+Step 1 already does. The resulting per-window correction is BOUNDED before being applied:
+rotation clipped to ROTATION_CAP_DEG (untuned default, same honesty convention as Step 1's
+Tukey constant), translation clipped to a cap computed per-flight from that flight's own
+real GT track speed (offline-diagnostic-only calibration -- a fielded system would use a
+known platform speed limit instead of per-flight ground truth). Overlapping windows are
+blended via a triangular taper. See .claude/plans/iterative-launching-parrot.md for the
+full design rationale and CLAUDE.md for the measured result.
+
 Usage:
     source ../CV_IP/cv_env/bin/activate
     python3 scripts/batch_trajectory_fusion.py
@@ -69,6 +87,17 @@ BANDWIDTH_S = 40.0              # local-regression time bandwidth, tuned on flig
 N_ITERS = 15
 TUKEY_C = 4.685                 # standard Tukey biweight tuning constant
 MAX_FRAME_GAP = 15              # matches evaluate_ground_truth.py's default
+
+# Step 2 (windowed Procrustes refinement) hyperparameters -- tuned once on flight 01
+# only, then held fixed across validation flights, same discipline as Step 1's own
+# BANDWIDTH_S/TUKEY_C above.
+WINDOW_S = 150.0                 # ~3.75x Step 1's bandwidth -- enough points/window to
+                                  # fit a 2D rigid transform (rotation+translation) robustly
+WINDOW_IRLS_ITERS = 3
+MIN_WINDOW_POINTS = 6            # skip a window with too few points to fit reliably
+ROTATION_CAP_DEG = 20.0          # untuned default, same honesty convention as TUKEY_C
+TRANSLATION_CAP_PERCENTILE = 95.0
+TRANSLATION_CAP_SAFETY_FACTOR = 3.0
 
 
 def project_to_local_xy(lats, lngs, lat0, lng0):
@@ -119,6 +148,108 @@ def batch_fuse(t, x, y, bandwidth_s=BANDWIDTH_S, n_iters=N_ITERS):
     return fx, fy, weights, resid
 
 
+def weighted_rigid_align(P, Q, weights):
+    """Closed-form weighted rigid (rotation + translation, no scale) alignment mapping
+    P -> Q (weighted Kabsch/Umeyama via SVD). Returns (theta_rad, tx, ty, R) such that
+    Q ~= R @ P + [tx, ty] in the weighted-least-squares sense."""
+    w = np.asarray(weights, dtype=float)
+    wsum = w.sum()
+    w = w / wsum if wsum > 1e-9 else np.full_like(w, 1.0 / len(w))
+    p_bar = (w[:, None] * P).sum(axis=0)
+    q_bar = (w[:, None] * Q).sum(axis=0)
+    Pc, Qc = P - p_bar, Q - q_bar
+    H = Pc.T @ (w[:, None] * Qc)
+    U, _, Vt = np.linalg.svd(H)
+    V = Vt.T
+    d = 1.0 if np.linalg.det(V @ U.T) >= 0 else -1.0
+    R = V @ np.diag([1.0, d]) @ U.T
+    t = q_bar - R @ p_bar
+    theta = np.arctan2(R[1, 0], R[0, 0])
+    return theta, t[0], t[1], R
+
+
+def compute_translation_cap(t, gx, gy, window_s,
+                             percentile=TRANSLATION_CAP_PERCENTILE,
+                             safety_factor=TRANSLATION_CAP_SAFETY_FACTOR):
+    """Per-flight Step-2 translation bound, grounded in that flight's own real GT
+    track speed rather than a guessed constant (matches this project's established
+    practice, e.g. MIN_VALID_KEYPOINTS/MIN_CROP_CONTRAST) -- offline-diagnostic-only
+    calibration; a fielded system would use a known platform speed limit instead."""
+    order = np.argsort(t)
+    ts, gxs, gys = t[order], gx[order], gy[order]
+    dt = np.diff(ts)
+    valid = dt > 0
+    if not np.any(valid):
+        return window_s * 50.0  # fallback, shouldn't happen with real dense GT
+    dist = np.hypot(np.diff(gxs), np.diff(gys))[valid]
+    speeds = dist / dt[valid]
+    cap_speed = safety_factor * np.percentile(speeds, percentile)
+    return cap_speed * window_s
+
+
+def windowed_procrustes_refine(t, x, y, fx, fy, translation_cap_m,
+                                window_s=WINDOW_S, rotation_cap_deg=ROTATION_CAP_DEG,
+                                n_iters=WINDOW_IRLS_ITERS, min_points=MIN_WINDOW_POINTS):
+    """Phase 4 Step 2: sliding-window bounded weighted Procrustes refinement of Step
+    1's fitted trajectory (fx, fy) against the raw matches (x, y). See the module
+    docstring and .claude/plans/iterative-launching-parrot.md for design rationale.
+
+    Returns (rx, ry, blended_weight) -- refined trajectory plus a per-frame blended
+    robustness weight (for the mechanism-check report), falling back to Step 1's own
+    (fx, fy) at any frame no window covers."""
+    t_min, t_max = t.min(), t.max()
+    stride = window_s / 2.0
+    centers = np.arange(t_min + stride, t_max - stride + stride, stride)
+    if len(centers) == 0:
+        centers = np.array([(t_min + t_max) / 2.0])
+
+    rotation_cap = np.deg2rad(rotation_cap_deg)
+    accum = np.zeros((len(t), 2))
+    accum_w = np.zeros(len(t))
+    accum_robust_w = np.zeros(len(t))
+
+    for c in centers:
+        idx = np.where(np.abs(t - c) <= window_s / 2.0)[0]
+        if len(idx) < min_points:
+            continue
+        P = np.stack([fx[idx], fy[idx]], axis=1)
+        Q = np.stack([x[idx], y[idx]], axis=1)
+        w = np.ones(len(idx))
+        theta = tx = ty = 0.0
+        R = np.eye(2)
+        for _ in range(n_iters):
+            theta, tx, ty, R = weighted_rigid_align(P, Q, w)
+            resid = np.linalg.norm((R @ P.T).T + np.array([tx, ty]) - Q, axis=1)
+            new_w, _ = tukey_biweight(resid)
+            if new_w.sum() < 1e-9:
+                # Reweighting collapsed to zero (degenerate window) -- keep this
+                # iteration's transform rather than feeding an all-zero/NaN weight
+                # vector into the next solve.
+                break
+            w = new_w
+
+        theta_b = np.clip(theta, -rotation_cap, rotation_cap)
+        t_mag = np.hypot(tx, ty)
+        if t_mag > translation_cap_m:
+            scale = translation_cap_m / t_mag
+            tx, ty = tx * scale, ty * scale
+        Rb = np.array([[np.cos(theta_b), -np.sin(theta_b)],
+                        [np.sin(theta_b), np.cos(theta_b)]])
+        refined = (Rb @ P.T).T + np.array([tx, ty])
+
+        taper = np.clip(1.0 - np.abs(t[idx] - c) / (window_s / 2.0), 0.0, 1.0)
+        accum[idx] += refined * taper[:, None]
+        accum_w[idx] += taper
+        accum_robust_w[idx] += taper * w
+
+    covered = accum_w > 1e-9
+    rx, ry, blended_w = fx.copy(), fy.copy(), np.zeros(len(t))
+    rx[covered] = accum[covered, 0] / accum_w[covered]
+    ry[covered] = accum[covered, 1] / accum_w[covered]
+    blended_w[covered] = accum_robust_w[covered] / accum_w[covered]
+    return rx, ry, blended_w
+
+
 def load_raw_track(gt_path, telemetry_path, max_gap=MAX_FRAME_GAP):
     gt = load_ground_truth(gt_path)
     tel = load_telemetry(telemetry_path)
@@ -146,8 +277,13 @@ def run_flight(flight):
     fx, fy, weights, resid_to_fit = batch_fuse(t, x, y)
     fused_lat, fused_lng = unproject_from_local_xy(fx, fy, lat0, lng0)
 
+    translation_cap_m = compute_translation_cap(t, gx, gy, WINDOW_S)
+    rx, ry, window_weights = windowed_procrustes_refine(t, x, y, fx, fy, translation_cap_m)
+    refined_lat, refined_lng = unproject_from_local_xy(rx, ry, lat0, lng0)
+
     raw_err = np.hypot(x - gx, y - gy)
     fused_err = np.hypot(fx - gx, fy - gy)
+    refined_err = np.hypot(rx - gx, ry - gy)
 
     existing = compute_stats(str(gt_path), str(tel_path), max_frame_gap=MAX_FRAME_GAP)
 
@@ -156,6 +292,7 @@ def run_flight(flight):
 
     raw_stats = summarize(raw_err)
     fused_stats = summarize(fused_err)
+    refined_stats = summarize(refined_err)
 
     print(f"\n{'=' * 90}\nFlight {flight}  (n={len(t)})\n{'=' * 90}")
     print(f"{'':>22} {'mean':>8} {'median':>8} {'max':>8} {'A@10m':>7} {'A@20m':>7}")
@@ -170,6 +307,7 @@ def run_flight(flight):
         row("Raw (evaluate_gt.py)", existing["raw"])
         row("Kalman-filtered", existing["filt"])
     row("Batch-fused (IRLS)", fused_stats)
+    row("Windowed Procrustes", refined_stats)
 
     # Sanity-check the mechanism: do high-final-weight frames actually have lower
     # TRUE error (ground truth used only for this check, never fed into the fit)?
@@ -177,9 +315,16 @@ def run_flight(flight):
     n = len(weights)
     low_third = order[: n // 3]
     high_third = order[-(n // 3):]
-    print(f"\nMechanism check -- true raw error by final IRLS weight tercile:")
+    print(f"\nMechanism check (Step 1) -- true raw error by final IRLS weight tercile:")
     print(f"  low-weight third  (n={len(low_third)}):  mean raw error = {raw_err[low_third].mean():.1f}m")
     print(f"  high-weight third (n={len(high_third)}): mean raw error = {raw_err[high_third].mean():.1f}m")
+
+    order2 = np.argsort(window_weights)
+    low2, high2 = order2[: n // 3], order2[-(n // 3):]
+    print(f"Mechanism check (Step 2, translation cap={translation_cap_m:.0f}m) -- "
+          f"true raw error by blended window-weight tercile:")
+    print(f"  low-weight third  (n={len(low2)}):  mean raw error = {raw_err[low2].mean():.1f}m")
+    print(f"  high-weight third (n={len(high2)}): mean raw error = {raw_err[high2].mean():.1f}m")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(7, 6))
@@ -187,7 +332,9 @@ def run_flight(flight):
     ax.scatter(raw_lng, raw_lat, c=weights, cmap="autumn_r", s=10, alpha=0.6,
                label="raw ORB guess (color = final IRLS weight)", zorder=3)
     ax.plot(fused_lng, fused_lat, "-", color="#2ca02c", linewidth=2.0,
-            label="batch-fused trajectory", zorder=4)
+            label="batch-fused trajectory (Step 1)", zorder=4)
+    ax.plot(refined_lng, refined_lat, "-", color="#d62728", linewidth=2.0,
+            label="windowed Procrustes (Step 2)", zorder=5)
     ax.set_xlabel("Longitude"); ax.set_ylabel("Latitude")
     ax.set_title(f"Flight {flight}: batch trajectory fusion vs. ground truth")
     ax.legend(loc="best", fontsize=8)
@@ -195,7 +342,7 @@ def run_flight(flight):
     fig.savefig(OUT_DIR / f"traj_flight{flight}.png", dpi=130)
     plt.close(fig)
 
-    return raw_stats, fused_stats, existing
+    return raw_stats, fused_stats, refined_stats, existing
 
 
 def main():
