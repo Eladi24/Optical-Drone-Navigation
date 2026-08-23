@@ -21,11 +21,17 @@ telemetry-labeled aerial imagery dataset with dense GPS ground truth for quantit
   optical flow, and a hybrid ensemble — selectable per run for direct comparison.
 - **Modular retrieval/matching pipeline**: candidate-crop retrieval and geometric match verification
   are split behind independent interfaces (`IRetrievalStage`/`IMatchingStage`), so a retrieval or
-  matching implementation can be swapped and benchmarked in isolation — a classical baseline is in
-  place, with a learned retrieval backbone planned next.
-- **Two position-fusion strategies**: a 4-state Kalman filter with adaptive, confidence-weighted
-  noise and outlier rejection, and a particle filter maintaining multiple position hypotheses
-  simultaneously rather than committing to a single belief.
+  matching implementation can be swapped and benchmarked in isolation. Classical (color histogram +
+  ORB/RANSAC) and learned (frozen DeiT-Tiny retrieval, XFeat local matching, via ONNX Runtime)
+  implementations are both in place and directly comparable.
+- **Three position-fusion strategies**: a 4-state Kalman filter with adaptive, confidence-weighted
+  noise and outlier rejection; a particle filter maintaining multiple position hypotheses
+  simultaneously rather than committing to a single belief; and an offline trajectory-level batch
+  estimator that exploits whole-flight structure — correct matches cluster near the true path even
+  when many individual frames are unreliable — to recover signal a purely causal filter cannot.
+- **Visual-inertial odometry module**: an integrated relative-motion estimator (camera + IMU),
+  evaluated end-to-end against a second, IMU-equipped ground-truth dataset as an independently
+  characterized component of the broader navigation stack.
 - **Real-world video pipeline**: automatic on-screen-overlay masking, altitude estimation from
   reference objects, ground-sample-distance normalization so drone and reference imagery are matched
   at consistent real-world scale.
@@ -55,8 +61,8 @@ fusion), `GlobalLocator` (initial-position search), `VideoProcessing` (the main 
 
 ## Tech Stack
 
-C++20, OpenCV 4.x, CMake, POSIX threads. Python 3 for dataset tooling, GeoTIFF conversion, and the
-ground-truth evaluation script.
+C++20, OpenCV 4.x, ONNX Runtime, CMake, POSIX threads. Python 3 for dataset tooling, GeoTIFF
+conversion, and evaluation/benchmarking scripts.
 
 ## Validation and Results
 
@@ -78,6 +84,17 @@ data, where drone and reference imagery share an identical source, the same pipe
 which helped isolate the real-world gap to content and domain differences rather than the matching
 algorithms themselves.
 
+A trajectory-level fusion strategy — exploiting whole-flight structure rather than filtering frame by
+frame — measurably reduces error beyond the causal Kalman filter alone, evidence that some of the
+remaining gap is recoverable through better use of existing per-frame evidence, not only through
+better per-frame matching.
+
+The visual-inertial odometry module was separately evaluated against a second, IMU-equipped
+ground-truth dataset. Its accuracy is currently limited on low-texture terrain, where sparse visual
+features are insufficient to keep inertial drift in check — a further, concrete instance of the same
+underlying theme: performance here is gated by scene content and feature discriminability, not by the
+estimation algorithms themselves.
+
 ## Getting Started
 
 ```bash
@@ -92,10 +109,10 @@ An API key is required for the live simulation/Haifa modes (Google Static Maps);
 
 ## Status
 
-Actively investigated rather than a finished product. The core pipeline, both fusion strategies, and
-the evaluation harness are complete and working. A systematic bottleneck diagnosis — instrumenting
+Actively investigated rather than a finished product. The core pipeline, all three fusion strategies,
+and the evaluation harness are complete and working. A systematic bottleneck diagnosis — instrumenting
 retrieval accuracy independently of match verification and fusion — pinpointed candidate retrieval,
-not feature matching itself, as the dominant source of error. The pipeline is now being restructured
-around that finding: retrieval and matching are split behind independent, swappable interfaces (see
-Features), with a classical baseline validated end-to-end and a learned retrieval backbone the next
-step.
+not feature matching itself, as the dominant source of error, motivating the retrieval/matching split
+and the learned (ONNX Runtime) implementations now in place alongside the classical baseline. Current
+work is on trajectory-level fusion and visual-inertial odometry as complementary levers on the
+remaining accuracy gap, and on broadening validation across additional real-world flight data.
