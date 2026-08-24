@@ -43,6 +43,15 @@ Usage:
 
     python3 scripts/export_retrieval_backbone.py --backbone dinov2_s \
         --output models/dinov2_s_retrieval.onnx --validate  # comparison point, not default
+
+    # A fine-tuned checkpoint (scripts/finetune_retrieval_backbone.py's output, a plain
+    # state_dict .pt matching this same architecture) -- --weights replaces the stock
+    # ImageNet pretrained=True load with pretrained=False + load_state_dict, mirroring
+    # export_xfeat.py's build_model()/--weights-cache pattern for loading an arbitrary
+    # local checkpoint rather than a package-provided one.
+    python3 scripts/export_retrieval_backbone.py --backbone dinov2_s \
+        --weights checkpoints/dinov2_s_finetuned.pt \
+        --output models/dinov2_s_finetuned_retrieval.onnx --validate
 """
 import argparse
 import os
@@ -60,24 +69,33 @@ INPUT_SIZE = 224
 OPSET_VERSION = 18
 
 
-def build_model(backbone_key: str):
+def build_model(backbone_key: str, weights_path: str = None):
     import timm
 
     model_name = BACKBONES[backbone_key]
-    kwargs = {"pretrained": True, "num_classes": 0}
+    # weights_path set -> start from a bare (untrained) architecture and load our own
+    # checkpoint instead of timm's stock ImageNet weights; pretrained=False here is not
+    # "no pretraining happened", it's "don't let timm silently overwrite the fine-tuned
+    # weights we're about to load with its own stock ones".
+    kwargs = {"pretrained": weights_path is None, "num_classes": 0}
     if backbone_key == "dinov2_s":
         # DINOv2's native patch14 default img_size is 518; force 224 so every
         # backbone in this script shares one fixed input size end-to-end.
         kwargs["img_size"] = INPUT_SIZE
     model = timm.create_model(model_name, **kwargs)
+    if weights_path is not None:
+        import torch
+        state_dict = torch.load(weights_path, map_location="cpu")
+        result = model.load_state_dict(state_dict, strict=True)
+        print(f"Loaded fine-tuned weights from {weights_path} ({result})")
     model.eval()
     return model, model_name
 
 
-def export(backbone_key: str, output_path: str):
+def export(backbone_key: str, output_path: str, weights_path: str = None):
     import torch
 
-    model, model_name = build_model(backbone_key)
+    model, model_name = build_model(backbone_key, weights_path)
     dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
 
     with torch.no_grad():
@@ -104,12 +122,13 @@ def export(backbone_key: str, output_path: str):
     return output_path
 
 
-def validate(backbone_key: str, output_path: str, n_samples: int = 5, atol: float = 1e-4):
+def validate(backbone_key: str, output_path: str, weights_path: str = None,
+             n_samples: int = 5, atol: float = 1e-4):
     import numpy as np
     import onnxruntime as ort
     import torch
 
-    model, _ = build_model(backbone_key)
+    model, _ = build_model(backbone_key, weights_path)
     session = ort.InferenceSession(output_path, providers=["CPUExecutionProvider"])
 
     max_diff = 0.0
@@ -132,14 +151,18 @@ def main():
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--backbone", choices=sorted(BACKBONES), default="deit_tiny")
     ap.add_argument("--output", required=True, help="Output .onnx path (e.g. models/deit_tiny_retrieval.onnx)")
+    ap.add_argument("--weights", default=None,
+                     help="Path to a fine-tuned state_dict .pt (scripts/finetune_retrieval_backbone.py's "
+                          "output) matching --backbone's architecture. Omit to export timm's stock "
+                          "ImageNet-pretrained weights (the existing frozen-baseline behavior, unchanged).")
     ap.add_argument("--validate", action="store_true",
                      help="Reload the exported graph via onnxruntime and diff against live PyTorch output")
     args = ap.parse_args()
 
-    export(args.backbone, args.output)
+    export(args.backbone, args.output, args.weights)
 
     if args.validate:
-        ok = validate(args.backbone, args.output)
+        ok = validate(args.backbone, args.output, args.weights)
         if not ok:
             sys.exit(1)
 

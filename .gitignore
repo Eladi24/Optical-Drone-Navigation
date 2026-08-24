@@ -69,6 +69,9 @@ Images/map_clean_esri_*.png
 # Ignore exported ONNX model weights (regenerable via
 # scripts/export_retrieval_backbone.py -- STRATEGY.md Phase 2 learned retrieval)
 models/
+# Ignore fine-tuning checkpoints (large binary training artifacts, regenerable
+# via scripts/finetune_retrieval_backbone.py -- STRATEGY.md Phase 2 fine-tuning)
+checkpoints/
 # Ignore Python bytecode cache (scripts/run_benchmark.py importing
 # scripts/evaluate_ground_truth.py as a module generates this)
 __pycache__/
