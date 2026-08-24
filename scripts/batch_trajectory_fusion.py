@@ -55,6 +55,19 @@ known platform speed limit instead of per-flight ground truth). Overlapping wind
 blended via a triangular taper. See .claude/plans/iterative-launching-parrot.md for the
 full design rationale and CLAUDE.md for the measured result.
 
+STEP 3 (added this pass): STRATEGY.md's third batch-estimator sub-task, "closed-form MAP
+estimate fusing odometry displacements with retrieval anchors, clamping detected outliers."
+`map_fuse_trajectory()` below is a generic, dataset-agnostic closed-form MAP/smoother solver
+-- purely additive, never called from main()/run_flight()/FLIGHTS, does not alter anything
+in the UAV-VisLoc Step 1/2 path above. It is validated as a MECHANISM-ONLY check on MUN-FRL
+quarry1's real Kimera-VIO output plus synthesized retrieval-anchor-like corrections, not as a
+Phase 4 accuracy result -- no dataset on disk has continuous-video odometry and wide-area
+retrieval anchors together (quarry1's whole real flight path fits inside a ~150x30m box, too
+small for satellite retrieval to mean anything; UAV-VisLoc has no continuous video or dense
+telemetry). See scripts/quarry1_fusion_mechanism_check.py and CLAUDE.md's "Investigation Log:
+Phase 4 Step 3" for the full split-validation rationale (same honesty convention as Step 1's
+own documented "deliberate substitution, not a literal implementation").
+
 Usage:
     source ../CV_IP/cv_env/bin/activate
     python3 scripts/batch_trajectory_fusion.py
@@ -66,6 +79,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+import scipy.sparse as sp
+from scipy.sparse.linalg import spsolve
 
 sys.path.insert(0, str(Path(__file__).parent))
 from evaluate_ground_truth import (
@@ -98,6 +113,14 @@ MIN_WINDOW_POINTS = 6            # skip a window with too few points to fit reli
 ROTATION_CAP_DEG = 20.0          # untuned default, same honesty convention as TUKEY_C
 TRANSLATION_CAP_PERCENTILE = 95.0
 TRANSLATION_CAP_SAFETY_FACTOR = 3.0
+
+# Step 3 (closed-form MAP fusion) hyperparameters -- generic solver defaults, not tuned
+# against any single flight (unlike Step 1/2's BANDWIDTH_S/ROTATION_CAP_DEG, which were
+# tuned once on flight 01); see quarry1_fusion_mechanism_check.py for the mechanism-check
+# -specific anchor-synthesis parameters, which ARE grounded/flagged there.
+MAP_IRLS_ITERS = 15              # matches Step 1's N_ITERS convention
+MAP_RIDGE = 1e-6                 # tiny Tikhonov term for numerical well-posedness only --
+                                  # NOT a modeling choice (see map_fuse_trajectory docstring)
 
 
 def project_to_local_xy(lats, lngs, lat0, lng0):
@@ -248,6 +271,102 @@ def windowed_procrustes_refine(t, x, y, fx, fy, translation_cap_m,
     ry[covered] = accum[covered, 1] / accum_w[covered]
     blended_w[covered] = accum_robust_w[covered] / accum_w[covered]
     return rx, ry, blended_w
+
+
+def map_fuse_trajectory(t, odo_dx, odo_dy, anchor_idx, anchor_x, anchor_y,
+                         sigma_odo=1.0, sigma_anchor=20.0,
+                         n_iters=MAP_IRLS_ITERS, ridge=MAP_RIDGE):
+    """Phase 4 Step 3: closed-form MAP fusion of consecutive-keyframe odometry
+    displacements with sparse absolute anchor observations, IRLS-robustified
+    (Tukey biweight, reusing tukey_biweight() -- the same idiom Step 1/2 already
+    use) against outliers in either the odometry chain (e.g. a VIO bias-freeze/
+    reset segment) or the anchors (e.g. a wrong-crop-style retrieval outlier).
+
+    Per-axis linear MAP solve, equivalent to a discrete-time RTS/Kalman-smoother
+    estimate for a random-walk-with-known-control-input process model (the
+    control input being the odometry displacement) plus linear-Gaussian absolute
+    measurements -- i.e. a 1D pose-graph with relative + absolute factors. With
+    weights held fixed, the MAP estimate is the exact minimizer of the weighted
+    least-squares objective sum_i ||x[i+1]-x[i]-d_i||^2/sigma_odo^2 +
+    sum_k ||x[anchor_idx[k]]-a_k||^2/sigma_anchor^2, obtained via ONE sparse
+    linear solve of the normal equations (A^T W A + ridge*I) v = A^T W b per
+    axis. Each IRLS iteration re-solves this exactly -- never an iterative
+    nonlinear optimizer (there are no rotation unknowns here, unlike Step 2's
+    Procrustes) -- then reweights odometry and anchor residuals independently
+    via tukey_biweight() on their POOLED joint (x,y) residual norm, so a
+    factor that's bad in either axis is flagged.
+
+    `ridge` is a tiny Tikhonov term for numerical well-posedness only (odometry
+    differences alone are rank-deficient by one d.o.f. per axis without at
+    least one anchor, and IRLS can zero out every anchor in a given iteration)
+    -- not a modeling / prior-belief choice.
+
+    Args:
+        t: (N,) VIO keyframe times (seconds, any consistent epoch) -- carried
+            through only for API symmetry with the rest of this file; the
+            solve itself is time-implicit (odometry displacements are already
+            per-keyframe increments).
+        odo_dx, odo_dy: (N-1,) consecutive-keyframe displacements, ALREADY in
+            the target/world frame -- any VIO-frame rotation/scale correction
+            must happen upstream of this function, which stays a general,
+            dataset-agnostic MAP solver.
+        anchor_idx: (M,) int, which state index (0..N-1) each anchor attaches to.
+        anchor_x, anchor_y: (M,) anchor absolute positions, target/world frame.
+        sigma_odo, sigma_anchor: nominal per-factor noise std (metres) --
+            untuned defaults, same honesty convention as ROTATION_CAP_DEG.
+        n_iters: IRLS iteration count.
+        ridge: Tikhonov regularization (numerical well-posedness only).
+
+    Returns:
+        fx, fy: (N,) fused per-keyframe position estimate.
+        w_odo: (N-1,) final IRLS weight per odometry factor.
+        w_anchor: (M,) final IRLS weight per anchor factor.
+    """
+    N = len(t)
+    n_odo = N - 1
+    M = len(anchor_idx)
+    anchor_idx = np.asarray(anchor_idx, dtype=int)
+
+    # Fixed sparsity pattern (built once; only the weights change per iteration).
+    rows_odo = np.repeat(np.arange(n_odo), 2)
+    cols_odo = np.column_stack([np.arange(n_odo), np.arange(1, N)]).ravel()
+    vals_odo = np.tile([-1.0, 1.0], n_odo)
+    rows_anc = np.arange(n_odo, n_odo + M)
+    cols_anc = anchor_idx
+    vals_anc = np.ones(M)
+    A = sp.csr_matrix(
+        (np.concatenate([vals_odo, vals_anc]),
+         (np.concatenate([rows_odo, rows_anc]), np.concatenate([cols_odo, cols_anc]))),
+        shape=(n_odo + M, N))
+    ridge_I = ridge * sp.identity(N, format="csr")
+    b_x = np.concatenate([odo_dx, anchor_x])
+    b_y = np.concatenate([odo_dy, anchor_y])
+
+    w_odo = np.ones(n_odo)
+    w_anchor = np.ones(M)
+    fx = fy = None
+
+    for _ in range(n_iters):
+        Wd = np.concatenate([w_odo / sigma_odo ** 2, w_anchor / sigma_anchor ** 2])
+        Wsp = sp.diags(Wd)
+        AtWA = (A.T @ Wsp @ A + ridge_I).tocsc()
+
+        fx = spsolve(AtWA, A.T @ (Wd * b_x))
+        fy = spsolve(AtWA, A.T @ (Wd * b_y))
+
+        odo_resid_x = (fx[1:] - fx[:-1]) - odo_dx
+        odo_resid_y = (fy[1:] - fy[:-1]) - odo_dy
+        anc_resid_x = fx[anchor_idx] - anchor_x
+        anc_resid_y = fy[anchor_idx] - anchor_y
+
+        w_odo, _ = tukey_biweight(np.hypot(odo_resid_x, odo_resid_y))
+        new_w_anchor, _ = tukey_biweight(np.hypot(anc_resid_x, anc_resid_y))
+        if new_w_anchor.sum() > 1e-9:
+            # Same degenerate-collapse guard windowed_procrustes_refine() uses --
+            # don't feed an all-zero weight vector into the next solve.
+            w_anchor = new_w_anchor
+
+    return fx, fy, w_odo, w_anchor
 
 
 def load_raw_track(gt_path, telemetry_path, max_gap=MAX_FRAME_GAP):
