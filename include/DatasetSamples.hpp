@@ -185,5 +185,86 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
         "Videos/dataset_uavvisloc_10.avi",
     });
 
+    // STRATEGY.md Phase 4 gate: the held-out set itself (Sec 6.1), unsealed for
+    // the first time here. {02, 05, 06, 07, 09, 11} minus flight 09 -- its
+    // satellite coverage is 4 separate GeoTIFF tiles (satellite09_01-01.tif
+    // etc.), unlike every other flight's single file, and
+    // convert_uavvisloc_satellite.py only accepts one --tif path; deferred
+    // rather than writing untested multi-tile stitching code on the critical
+    // path of the first-ever held-out gate run (see CLAUDE.md's Phase 4 gate
+    // Investigation Log). Frame counts confirmed directly from each flight's
+    // drone/ directory, not assumed. Altitude spread (telemetry `height`
+    // column, own per-flight <NN>.csv) checked directly for all 5, not just
+    // cited from the original dev/validation assignment's flag: 02 (6.3m
+    // spread) and 07 (0.7m spread, only 30 frames -- a tiny ~0.03km^2 survey
+    // patch) are AGL-plausible, same as every dev/validation flight. 05
+    // (11.8m spread but ~2310m ABSOLUTE height), 06 (343.0m spread), and 11
+    // (603.7m spread, ~1970-2570m absolute) are essentially certainly MSL,
+    // not AGL, over mountainous terrain (Yunnan/Zhuxi/Shandan) -- the
+    // GSD/footprint math these three feed will be measurably wrong, same
+    // known-compromised-input category as flight 08's stale reference
+    // imagery. Run anyway (per this project's practice of not silently
+    // excluding a flight rather than flagging it), but scripts/held_out_gate.py
+    // reports these 3 separately from the 2 clean flights, not pooled into
+    // one number.
+    //
+    // Flight 07's entry below is kept (config is correct) even though it
+    // could not actually be run: importUavVisLocTelemetry() parses zero rows
+    // from its raw 07.csv, which has a different, shorter schema
+    // (num,filename,date,lat,lon,height -- 6 columns) than every other
+    // flight's (...,Omega,Kappa,Phi1,Phi2 -- 10 columns), confirmed by
+    // direct inspection -- a real, one-off anomaly in this specific flight's
+    // UAV-VisLoc release, not a config or pipeline bug. Fixing
+    // TelemetryImporter's parser to handle a variable column count is a
+    // real, separate change, deferred the same way flight 09's tile-
+    // stitching was; scripts/held_out_gate.py excludes "07" from both its
+    // CLEAN_FLIGHTS and CAUTION_FLIGHTS lists for this reason. See CLAUDE.md's
+    // Phase 4 gate Investigation Log.
+    samples.push_back({
+        "uavvisloc_02", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/02/drone", "02", 1071,
+        "Datasets/UAV_VisLoc_dataset/02/02.csv",
+        "Images/map_clean_uavvisloc_02.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite02.tif",
+        "Videos/dataset_uavvisloc_02.avi",
+    });
+    samples.push_back({
+        "uavvisloc_05", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/05/drone", "05", 473,
+        "Datasets/UAV_VisLoc_dataset/05/05.csv",
+        "Images/map_clean_uavvisloc_05.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite05.tif",
+        "Videos/dataset_uavvisloc_05.avi",
+    });
+    samples.push_back({
+        "uavvisloc_06", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/06/drone", "06", 344,
+        "Datasets/UAV_VisLoc_dataset/06/06.csv",
+        "Images/map_clean_uavvisloc_06.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite06.tif",
+        "Videos/dataset_uavvisloc_06.avi",
+    });
+    samples.push_back({
+        "uavvisloc_07", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/07/drone", "07", 30,
+        "Datasets/UAV_VisLoc_dataset/07/07.csv",
+        "Images/map_clean_uavvisloc_07.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite07.tif",
+        "Videos/dataset_uavvisloc_07.avi",
+    });
+    samples.push_back({
+        "uavvisloc_11", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/11/drone", "11", 590,
+        "Datasets/UAV_VisLoc_dataset/11/11.csv",
+        "Images/map_clean_uavvisloc_11.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite11.tif",
+        "Videos/dataset_uavvisloc_11.avi",
+    });
+
     return samples;
 }
