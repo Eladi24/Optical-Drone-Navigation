@@ -40,4 +40,15 @@ public:
     virtual void setFeatureMask(const cv::Mat& /*mask*/) {}
 
     virtual MatchResult match(const cv::Mat& frame, const ReferenceCrop& crop) = 0;
+
+    // Whether match() may safely be called concurrently, from multiple threads, on this SAME
+    // instance (e.g. once per candidate crop within one frame). Default false -- preserves every
+    // existing implementation's exact current (sequential, single-threaded) behavior unchanged.
+    // Only override to true once the implementation's own internal shared state (e.g. a
+    // per-image feature cache) is genuinely synchronized for concurrent access -- see
+    // DiskLightGlueMatching for the one implementation that does this, and why it was needed
+    // (CPU-only LightGlue inference is too slow per-candidate for a full multi-flight gate
+    // without exploiting the real per-frame candidate-level parallelism -- see CLAUDE.md's
+    // DISK+LightGlue Investigation Log).
+    virtual bool isThreadSafe() const { return false; }
 };

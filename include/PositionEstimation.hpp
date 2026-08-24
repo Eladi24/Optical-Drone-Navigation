@@ -108,12 +108,19 @@ enum class PositionAlgorithm {
                        // matching variable against SPLIT's baseline, the
                        // complementary comparison to SPLIT_LEARNED_RETRIEVAL
                        // above. See CLAUDE.md's Phase 2 Investigation Log.
-    SPLIT_LEARNED      // STRATEGY.md Phase 2: SplitPipelineEstimator, BOTH
+    SPLIT_LEARNED,     // STRATEGY.md Phase 2: SplitPipelineEstimator, BOTH
                        // learned stages combined -- DeiT-Tiny/ONNX retrieval
                        // + XFeat/ONNX matching. Not a new variable in
                        // isolation; combines the two already-isolated wins
                        // above to see whether they compound. See CLAUDE.md's
                        // Phase 2 Investigation Log.
+    SPLIT_LEARNED_MATCH_DISK_LIGHTGLUE // STRATEGY.md Phase 2: SplitPipelineEstimator,
+                       // classical (histogram) retrieval held constant + learned
+                       // (DISK+LightGlue/ONNX) matching -- the second learned-matching
+                       // candidate (XFeat was the first), isolates the matching
+                       // variable against SPLIT's baseline the same way
+                       // SPLIT_LEARNED_MATCH_XFEAT does. See CLAUDE.md's Phase 2
+                       // Investigation Log.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

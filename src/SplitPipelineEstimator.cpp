@@ -1,17 +1,43 @@
 #include "SplitPipelineEstimator.hpp"
 #include "CoordinateUtils.hpp"
+#include "SyncBarrier.hpp"
 #include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
 #include <algorithm>
 
+namespace {
+// One candidate crop match per task -- unlike ORBFeatureEstimator's own chunked-range-of-crops
+// worker (built for a much larger, whole-database Stage 1 pass), top_k here is typically small
+// (10), so a 1-task-per-candidate split is simple and already exposes all the real parallelism
+// available per frame; extra tasks beyond pool_.threadCount() just queue.
+struct MatchTaskData {
+    IMatchingStage*       matching;
+    const cv::Mat*        drone_view;
+    const ReferenceCrop*  crop;
+    int                   crop_idx;
+    SyncBarrier*          barrier;
+    MatchResult           result;  // output, written exclusively by this task's own thread
+};
+
+void* matchCandidateWorker(void* arg)
+{
+    auto* d = static_cast<MatchTaskData*>(arg);
+    d->result = d->matching->match(*d->drone_view, *d->crop);
+    d->barrier->signal();
+    return nullptr;
+}
+}  // namespace
+
 SplitPipelineEstimator::SplitPipelineEstimator(std::unique_ptr<IRetrievalStage> retrieval,
                                                 std::unique_ptr<IMatchingStage> matching,
                                                 std::string name,
-                                                int top_k)
+                                                int top_k,
+                                                int num_threads)
     : retrieval_(std::move(retrieval))
     , matching_(std::move(matching))
     , name_(std::move(name))
     , top_k_(top_k)
+    , pool_(static_cast<size_t>(std::max(1, num_threads)))
 {
 }
 
@@ -60,19 +86,53 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
     // ParticleFilter's multi-hypothesis update, same as ORBFeatureEstimator.
     std::vector<std::pair<std::pair<double, double>, double>> surviving_candidates;
 
-    for (int idx : candidate_indices) {
-        if (idx < 0 || idx >= static_cast<int>(reference_crops.size())) continue;
-
-        MatchResult m = matching_->match(drone_view, reference_crops[idx]);
-        if (m.homography.empty() || m.inliers == 0) continue;
-
+    // Reduce a completed set of per-candidate MatchResults down to best_idx/best_inliers/best_H
+    // and surviving_candidates -- shared by both the threaded and sequential paths below so the
+    // selection logic (and therefore the numbers) is identical either way.
+    auto consider = [&](int idx, const MatchResult& m) {
+        if (idx < 0 || m.homography.empty() || m.inliers == 0) return;
         surviving_candidates.push_back({reference_crops[idx].coordinates,
                                          static_cast<double>(m.inliers)});
-
         if (m.inliers > best_inliers) {
             best_inliers = m.inliers;
             best_idx     = idx;
             best_H       = m.homography;
+        }
+    };
+
+    if (matching_->isThreadSafe()) {
+        // Run match() for every retrieved candidate concurrently -- see
+        // DiskLightGlueMatching::isThreadSafe()'s own comment for why this exists (CPU-only
+        // LightGlue inference is too slow per-candidate otherwise) and why it's safe (per-image
+        // feature cache protected by its own rwlock, Ort::Session::Run() is documented
+        // thread-safe for concurrent calls on the same session). Every OTHER matching stage
+        // still takes the sequential branch below, byte-for-byte unchanged.
+        std::vector<int> valid_indices;
+        valid_indices.reserve(candidate_indices.size());
+        for (int idx : candidate_indices)
+            if (idx >= 0 && idx < static_cast<int>(reference_crops.size()))
+                valid_indices.push_back(idx);
+
+        if (!valid_indices.empty()) {
+            const int n = static_cast<int>(valid_indices.size());
+            SyncBarrier barrier(n);
+            std::vector<MatchTaskData> tasks(n);
+            for (int i = 0; i < n; ++i) {
+                tasks[i].matching   = matching_.get();
+                tasks[i].drone_view = &drone_view;
+                tasks[i].crop       = &reference_crops[valid_indices[i]];
+                tasks[i].crop_idx   = valid_indices[i];
+                tasks[i].barrier    = &barrier;
+                pool_.enqueue(matchCandidateWorker, &tasks[i]);
+            }
+            barrier.wait();  // blocks until all n tasks have signalled
+
+            for (const auto& t : tasks) consider(t.crop_idx, t.result);
+        }
+    } else {
+        for (int idx : candidate_indices) {
+            if (idx < 0 || idx >= static_cast<int>(reference_crops.size())) continue;
+            consider(idx, matching_->match(drone_view, reference_crops[idx]));
         }
     }
 

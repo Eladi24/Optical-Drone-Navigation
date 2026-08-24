@@ -22,6 +22,7 @@
 #include "OrbRansacMatching.hpp"
 #include "OnnxDeitRetrieval.hpp"
 #include "XFeatMatching.hpp"
+#include "DiskLightGlueMatching.hpp"
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
@@ -78,6 +79,18 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<OnnxDeitRetrieval>(),
                 std::make_unique<XFeatMatching>(),
                 "split_learned");
+
+        // STRATEGY.md Phase 2 learned matching, second candidate: swaps ONLY
+        // the matching stage (classical ORB/RANSAC -> DISK+LightGlue/ONNX),
+        // retrieval held at the same GlobalHistogramRetrieval as "split" and
+        // "split_xfeat" so this isolates exactly one variable against SPLIT's
+        // baseline, the same isolation shape as SPLIT_LEARNED_MATCH_XFEAT.
+        // See CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT_LEARNED_MATCH_DISK_LIGHTGLUE:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<GlobalHistogramRetrieval>(),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_disk");
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).

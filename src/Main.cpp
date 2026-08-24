@@ -714,6 +714,8 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::SPLIT_LEARNED_MATCH_XFEAT;
         else if (algo_str == "split_learned" || algo_str == "SPLIT_LEARNED")
             algorithm = PositionAlgorithm::SPLIT_LEARNED;
+        else if (algo_str == "split_disk" || algo_str == "SPLIT_DISK")
+            algorithm = PositionAlgorithm::SPLIT_LEARNED_MATCH_DISK_LIGHTGLUE;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }
