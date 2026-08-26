@@ -92,6 +92,18 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<DiskLightGlueMatching>(),
                 "split_disk");
 
+        // STRATEGY.md Phase 2: second combined pipeline, mirroring SPLIT_LEARNED's
+        // DeiT+XFeat precedent but pairing DeiT-Tiny/ONNX retrieval with
+        // DISK+LightGlue/ONNX matching instead -- both individually-measured wins
+        // (SPLIT_LEARNED_RETRIEVAL's recall gain, SPLIT_LEARNED_MATCH_DISK_LIGHTGLUE's
+        // 0%-invalid-rate matching) combined to see whether they compound the way
+        // SPLIT_LEARNED's did. See CLAUDE.md's Phase 2 Investigation Log.
+        case PositionAlgorithm::SPLIT_LEARNED_DISK:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>(),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_learned_disk");
+
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
         // createPositionEstimator should never be called for it — fall through
