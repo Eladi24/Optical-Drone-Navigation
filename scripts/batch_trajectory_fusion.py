@@ -71,7 +71,12 @@ own documented "deliberate substitution, not a literal implementation").
 Usage:
     source ../CV_IP/cv_env/bin/activate
     python3 scripts/batch_trajectory_fusion.py
+    # Re-run Step 1/2 against a different estimator's raw telemetry (e.g. to check
+    # whether a stronger Phase 2 retrieval+matching combo changes the fusion picture --
+    # see CLAUDE.md's "Investigation Log: split_learned_disk through batch fusion"):
+    python3 scripts/batch_trajectory_fusion.py --estimator split_learned_disk
 """
+import argparse
 import sys
 from pathlib import Path
 
@@ -98,6 +103,10 @@ OUT_DIR = REPO / "Images" / "batch_fusion"
 # discipline (STRATEGY.md Sec 6.1). Held-out flights (02/05/06/07/09/11) deliberately
 # not touched -- reserved for Phase 4's actual gate, not a Step-1 prototype.
 FLIGHTS = ["01", "03", "04", "08", "10"]
+DEFAULT_ESTIMATOR = "orb"       # which telemetry CSV family to fuse -- orb is this
+                                 # script's original, hyperparameter-tuning baseline;
+                                 # override via --estimator to fuse a different Phase 2
+                                 # config's raw matches without retuning anything below
 BANDWIDTH_S = 40.0              # local-regression time bandwidth, tuned on flight 01
 N_ITERS = 15
 TUKEY_C = 4.685                 # standard Tukey biweight tuning constant
@@ -384,9 +393,9 @@ def load_raw_track(gt_path, telemetry_path, max_gap=MAX_FRAME_GAP):
             np.array(gt_lat), np.array(gt_lng))
 
 
-def run_flight(flight):
+def run_flight(flight, estimator=DEFAULT_ESTIMATOR):
     gt_path = CSV_DIR / f"ground_truth_uavvisloc_{flight}.csv"
-    tel_path = CSV_DIR / f"video_telemetry_orb_uavvisloc_uavvisloc_{flight}.csv"
+    tel_path = CSV_DIR / f"video_telemetry_{estimator}_uavvisloc_uavvisloc_{flight}.csv"
 
     frames, t, raw_lat, raw_lng, gt_lat, gt_lng = load_raw_track(gt_path, tel_path)
     lat0, lng0 = gt_lat.mean(), gt_lng.mean()
@@ -413,7 +422,7 @@ def run_flight(flight):
     fused_stats = summarize(fused_err)
     refined_stats = summarize(refined_err)
 
-    print(f"\n{'=' * 90}\nFlight {flight}  (n={len(t)})\n{'=' * 90}")
+    print(f"\n{'=' * 90}\nFlight {flight}  estimator={estimator}  (n={len(t)})\n{'=' * 90}")
     print(f"{'':>22} {'mean':>8} {'median':>8} {'max':>8} {'A@10m':>7} {'A@20m':>7}")
 
     def row(label, s):
@@ -455,18 +464,35 @@ def run_flight(flight):
     ax.plot(refined_lng, refined_lat, "-", color="#d62728", linewidth=2.0,
             label="windowed Procrustes (Step 2)", zorder=5)
     ax.set_xlabel("Longitude"); ax.set_ylabel("Latitude")
-    ax.set_title(f"Flight {flight}: batch trajectory fusion vs. ground truth")
+    ax.set_title(f"Flight {flight} ({estimator}): batch trajectory fusion vs. ground truth")
     ax.legend(loc="best", fontsize=8)
     fig.tight_layout()
-    fig.savefig(OUT_DIR / f"traj_flight{flight}.png", dpi=130)
+    # Keep the default (orb) run's filenames stable -- they're referenced directly
+    # elsewhere in CLAUDE.md -- and only suffix non-default estimators so a
+    # different config's plots don't clobber them.
+    suffix = "" if estimator == DEFAULT_ESTIMATOR else f"_{estimator}"
+    fig.savefig(OUT_DIR / f"traj_flight{flight}{suffix}.png", dpi=130)
     plt.close(fig)
 
     return raw_stats, fused_stats, refined_stats, existing
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__,
+                                      formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--estimator", default=DEFAULT_ESTIMATOR,
+                         help=f"telemetry CSV family to fuse (default: {DEFAULT_ESTIMATOR})")
+    args = parser.parse_args()
+
+    all_raw, all_fused, all_refined = [], [], []
     for flight in FLIGHTS:
-        run_flight(flight)
+        raw_stats, fused_stats, refined_stats, _ = run_flight(flight, estimator=args.estimator)
+        all_raw.append(raw_stats["mean"]); all_fused.append(fused_stats["mean"]); all_refined.append(refined_stats["mean"])
+
+    print(f"\n{'=' * 90}\nCombined across {FLIGHTS} (mean-of-per-flight-means, estimator={args.estimator})\n{'=' * 90}")
+    print(f"  Raw mean:               {np.mean(all_raw):8.1f}m")
+    print(f"  Batch-fused (Step 1) mean: {np.mean(all_fused):8.1f}m")
+    print(f"  Windowed Procrustes (Step 2) mean: {np.mean(all_refined):8.1f}m")
     print(f"\nPlots written to {OUT_DIR}/")
 
 
