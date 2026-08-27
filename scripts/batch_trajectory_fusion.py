@@ -482,14 +482,21 @@ def main():
                                       formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--estimator", default=DEFAULT_ESTIMATOR,
                          help=f"telemetry CSV family to fuse (default: {DEFAULT_ESTIMATOR})")
+    parser.add_argument("--flights", default=None,
+                         help=f"comma-separated flight numbers to fuse (default: the dev+validation "
+                              f"set {FLIGHTS} this script's hyperparameters were tuned/validated on -- "
+                              f"pass e.g. 02,05,06,11 to run held-out flights explicitly; this is never "
+                              f"the default, matching this project's own discipline of not touching "
+                              f"held-out data casually)")
     args = parser.parse_args()
+    flights = args.flights.split(",") if args.flights else FLIGHTS
 
     all_raw, all_fused, all_refined = [], [], []
-    for flight in FLIGHTS:
+    for flight in flights:
         raw_stats, fused_stats, refined_stats, _ = run_flight(flight, estimator=args.estimator)
         all_raw.append(raw_stats["mean"]); all_fused.append(fused_stats["mean"]); all_refined.append(refined_stats["mean"])
 
-    print(f"\n{'=' * 90}\nCombined across {FLIGHTS} (mean-of-per-flight-means, estimator={args.estimator})\n{'=' * 90}")
+    print(f"\n{'=' * 90}\nCombined across {flights} (mean-of-per-flight-means, estimator={args.estimator})\n{'=' * 90}")
     print(f"  Raw mean:               {np.mean(all_raw):8.1f}m")
     print(f"  Batch-fused (Step 1) mean: {np.mean(all_fused):8.1f}m")
     print(f"  Windowed Procrustes (Step 2) mean: {np.mean(all_refined):8.1f}m")
