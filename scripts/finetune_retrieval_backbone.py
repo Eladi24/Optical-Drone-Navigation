@@ -187,6 +187,7 @@ def train(args):
     optimizer = torch.optim.AdamW(trainable_params, lr=args.lr)
 
     epochs = 1 if args.smoke_test else args.epochs
+    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
     for epoch in range(epochs):
         model.train()
         total_loss, n_batches = 0.0, 0
@@ -212,9 +213,17 @@ def train(args):
         avg_loss = total_loss / max(n_batches, 1)
         print(f"Epoch {epoch + 1}/{epochs}: avg InfoNCE loss = {avg_loss:.4f} ({n_batches} batches)")
 
-    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
-    torch.save(model.state_dict(), args.checkpoint)
-    print(f"Saved checkpoint: {args.checkpoint}")
+        # Checkpoint after every epoch, not just at the end -- a long GPU-bound
+        # run (Colab free tier especially) can disconnect/time out before the
+        # full --epochs count finishes, and losing all progress to that has no
+        # upside. Overwrites the same path each epoch (not epoch-numbered
+        # files) since only the latest state is ever useful here; the final
+        # write after the loop is now redundant but kept as a defensive no-op
+        # in case a future change makes it not so.
+        torch.save(model.state_dict(), args.checkpoint)
+        print(f"  Checkpoint saved: {args.checkpoint} (epoch {epoch + 1}/{epochs})")
+
+    print(f"Final checkpoint: {args.checkpoint}")
 
 
 def main():
