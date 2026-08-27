@@ -104,6 +104,17 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<DiskLightGlueMatching>(),
                 "split_learned_disk");
 
+        // STRATEGY.md Phase 2 fine-tuning Stage 4: same pairing as SPLIT_LEARNED_DISK,
+        // but the retrieval stage's model path points at the fine-tuned DINOv2-S
+        // backbone instead of the frozen DeiT-Tiny one -- isolates the fine-tuning
+        // variable against SPLIT_LEARNED_DISK's already-recorded frozen baseline. See
+        // CLAUDE.md's "Phase 2 Fine-Tuning" Investigation Log.
+        case PositionAlgorithm::SPLIT_FINETUNED_DISK:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>("models/dinov2_s_finetuned_retrieval.onnx"),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_finetuned_disk");
+
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
         // createPositionEstimator should never be called for it — fall through
