@@ -816,6 +816,67 @@ void processVideoNavigation(
                         cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 2);
         }
 
+        // Progress sidebar to the LEFT of the map -- the "Frame: X/total" text
+        // overlaid on the map itself is unreadably small once a multi-thousand-
+        // pixel reference map is scaled down to fit a WINDOW_NORMAL window on a
+        // long flight. This panel's text is sized relative to its own width, so
+        // it stays legible no matter how far the window is scaled.
+        {
+            int side_w = std::max(360, static_cast<int>(display_map.cols * 0.16));
+            cv::Mat sidebar(display_map.rows, side_w, display_map.type(),
+                            cv::Scalar(38, 38, 38));
+            double s = side_w / 340.0;              // base font scale
+            int    m = static_cast<int>(24 * s);   // left margin
+            int    y = static_cast<int>(70 * s);
+            auto put = [&](const std::string& t, double sc, cv::Scalar col,
+                           int thick, int dy) {
+                cv::putText(sidebar, t, cv::Point(m, y), cv::FONT_HERSHEY_SIMPLEX,
+                            sc, col, thick, cv::LINE_AA);
+                y += dy;
+            };
+            put("FRAME", 0.9 * s, cv::Scalar(170, 170, 170), 2, int(70 * s));
+            put(std::to_string(frame_idx) + " / " + std::to_string(total_frames),
+                1.7 * s, cv::Scalar(255, 255, 255), 3, int(70 * s));
+            double pct = total_frames > 0 ? (100.0 * frame_idx / total_frames) : 0.0;
+            {
+                std::ostringstream p; p << std::fixed << std::setprecision(1) << pct << " %";
+                put(p.str(), 1.2 * s, cv::Scalar(0, 220, 255), 2, int(50 * s));
+            }
+            // progress bar
+            int bx = m, bw = side_w - 2 * m, bh = int(26 * s);
+            cv::rectangle(sidebar, cv::Rect(bx, y, bw, bh), cv::Scalar(90, 90, 90), 1);
+            cv::rectangle(sidebar, cv::Rect(bx, y, int(bw * pct / 100.0), bh),
+                          cv::Scalar(0, 200, 120), cv::FILLED);
+            y += int(70 * s);
+            {
+                std::ostringstream tt; tt << "t = " << std::fixed << std::setprecision(1)
+                                          << time_sec << " s";
+                put(tt.str(), 0.8 * s, cv::Scalar(220, 220, 220), 2, int(45 * s));
+            }
+            {
+                cv::Scalar cc = (confidence > 0.7) ? cv::Scalar(0, 255, 0)
+                              : (confidence > 0.5) ? cv::Scalar(0, 255, 255)
+                                                   : cv::Scalar(0, 0, 255);
+                std::ostringstream cf; cf << "conf = " << std::fixed << std::setprecision(2)
+                                          << confidence;
+                put(cf.str(), 0.8 * s, cc, 2, int(45 * s));
+            }
+            {
+                double opct = processed_frames > 0
+                    ? 100.0 * outliers_rejected / processed_frames : 0.0;
+                std::ostringstream oo; oo << "outliers " << std::fixed
+                                          << std::setprecision(0) << opct << "%";
+                put(oo.str(), 0.8 * s, cv::Scalar(200, 200, 200), 2, int(45 * s));
+            }
+            if (outlier_rejected)
+                put("OUTLIER REJECTED", 0.75 * s, cv::Scalar(0, 0, 255), 2, int(45 * s));
+            if (consecutive_rejections > 3)
+                put("FILTER DRIFTING (" + std::to_string(consecutive_rejections) + ")",
+                    0.7 * s, cv::Scalar(0, 140, 255), 2, int(45 * s));
+
+            cv::hconcat(std::vector<cv::Mat>{sidebar, display_map}, display_map);
+        }
+
         cv::imshow("Video Navigation", display_map);
         // Always show the original colour frame — processed_frame is internal only
         cv::imshow("Video Frame", frame);
