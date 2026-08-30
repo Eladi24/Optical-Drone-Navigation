@@ -28,53 +28,53 @@ def conv4d(data, filters, bias=None, permute_filters=True, use_half=False):
         filters = filters.permute(2, 0, 1, 3, 4, 5).contiguous()
 
     c_out = filters.size(1)
-    if use_half:
-        output = Variable(
-            torch.HalfTensor(h, b, c_out, w, d, t), requires_grad=data.requires_grad
-        )
-    else:
-        output = Variable(
-            torch.zeros(h, b, c_out, w, d, t), requires_grad=data.requires_grad
-        )
-
     padding = filters.size(0) // 2
     if use_half:
-        Z = Variable(torch.zeros(padding, b, c, w, d, t).half())
+        Z = torch.zeros(padding, b, c, w, d, t, dtype=torch.half)
     else:
-        Z = Variable(torch.zeros(padding, b, c, w, d, t))
+        Z = torch.zeros(padding, b, c, w, d, t)
 
     if data.is_cuda:
         Z = Z.cuda(data.get_device())
-        output = output.cuda(data.get_device())
 
     data_padded = torch.cat((Z, data, Z), 0)
 
-    for i in range(output.size(0)):  # loop on first feature dimension
+    # NOTE (local mod, not upstream): the original builds a pre-allocated `output`
+    # buffer and writes `output[i] = ...` in place. Modern PyTorch autograd
+    # rejects that in-place write on a leaf tensor during training
+    # ("a view of a leaf Variable ... in-place operation"). Rewritten to
+    # accumulate a per-i list and torch.stack -- mathematically identical, and
+    # traces/exports the same once the fixed-length loop unrolls. See
+    # scripts/vendor/ncnet/README.md.
+    out_slices = []
+    for i in range(h):  # loop on first (padded-out) feature dimension
         # convolve with center channel of filter (at position=padding)
-        output[i, :, :, :, :, :] = F.conv3d(
+        o = F.conv3d(
             data_padded[i + padding, :, :, :, :, :],
             filters[padding, :, :, :, :, :],
             bias=bias,
             stride=1,
             padding=padding,
         )
-        # convolve with upper/lower channels of filter (at postions [:padding] [padding+1:])
+        # convolve with upper/lower channels of filter (positions [:padding] [padding+1:])
         for p in range(1, padding + 1):
-            output[i, :, :, :, :, :] = output[i, :, :, :, :, :] + F.conv3d(
+            o = o + F.conv3d(
                 data_padded[i + padding - p, :, :, :, :, :],
                 filters[padding - p, :, :, :, :, :],
                 bias=None,
                 stride=1,
                 padding=padding,
             )
-            output[i, :, :, :, :, :] = output[i, :, :, :, :, :] + F.conv3d(
+            o = o + F.conv3d(
                 data_padded[i + padding + p, :, :, :, :, :],
                 filters[padding + p, :, :, :, :, :],
                 bias=None,
                 stride=1,
                 padding=padding,
             )
+        out_slices.append(o)
 
+    output = torch.stack(out_slices, dim=0)  # [h, b, c_out, w, d, t]
     output = output.permute(1, 2, 0, 3, 4, 5).contiguous()
     return output
 
