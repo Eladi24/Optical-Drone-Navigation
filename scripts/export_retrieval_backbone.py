@@ -69,7 +69,40 @@ INPUT_SIZE = 224
 OPSET_VERSION = 18
 
 
-def build_model(backbone_key: str, weights_path: str = None):
+class _DensePatchTokens:
+    """Wraps a timm ViT so forward() returns its per-patch token grid
+    [B, n_patches, C] (prefix/CLS/distill/register tokens dropped) instead of the
+    pooled embedding. This is the readout STRATEGY.md's Phase 2+ semantic/dense-
+    matching direction needs (arXiv:2506.09748): dense DINOv2 features matched with
+    a correlation volume, not a single global vector. Same backbone, same weights
+    (incl. a fine-tuned checkpoint) -- only the output head differs, so it lives
+    here rather than in a second export script.
+    """
+    def __init__(self, model):
+        import torch.nn as nn
+        self._nn = nn
+        self.model = model
+        self.n_prefix = int(getattr(model, "num_prefix_tokens", 1))
+
+    def make(self):
+        nn = self._nn
+        model, n_prefix = self.model, self.n_prefix
+
+        class Wrap(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.m = model
+
+            def forward(self, x):
+                feats = self.m.forward_features(x)      # [B, n_prefix + n_patch, C]
+                return feats[:, n_prefix:, :].contiguous()
+
+        w = Wrap()
+        w.eval()
+        return w
+
+
+def build_model(backbone_key: str, weights_path: str = None, dense: bool = False):
     import timm
 
     model_name = BACKBONES[backbone_key]
@@ -89,19 +122,22 @@ def build_model(backbone_key: str, weights_path: str = None):
         result = model.load_state_dict(state_dict, strict=True)
         print(f"Loaded fine-tuned weights from {weights_path} ({result})")
     model.eval()
+    if dense:
+        model = _DensePatchTokens(model).make()
     return model, model_name
 
 
-def export(backbone_key: str, output_path: str, weights_path: str = None):
+def export(backbone_key: str, output_path: str, weights_path: str = None,
+           dense: bool = False):
     import torch
 
-    model, model_name = build_model(backbone_key, weights_path)
+    model, model_name = build_model(backbone_key, weights_path, dense=dense)
     dummy = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
 
     with torch.no_grad():
-        embedding = model(dummy)
-    embed_dim = embedding.shape[-1]
+        out = model(dummy)
     n_params = sum(p.numel() for p in model.parameters())
+    out_name = "patch_tokens" if dense else "embedding"
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     torch.onnx.export(
@@ -109,34 +145,40 @@ def export(backbone_key: str, output_path: str, weights_path: str = None):
         dummy,
         output_path,
         input_names=["image"],
-        output_names=["embedding"],
+        output_names=[out_name],
         opset_version=OPSET_VERSION,
         dynamic_axes=None,
     )
 
-    print(f"Backbone: {model_name} ({backbone_key})")
+    print(f"Backbone: {model_name} ({backbone_key}){'  [dense patch tokens]' if dense else ''}")
     print(f"Parameters: {n_params:,}")
-    print(f"Embedding dim: {embed_dim}")
+    if dense:
+        _, n_tok, c = out.shape
+        g = int(round(n_tok ** 0.5))
+        print(f"Output '{out_name}': [1, {n_tok}, {c}]  (~{g}x{g} patch grid, not L2-normalized)")
+    else:
+        print(f"Embedding dim: {out.shape[-1]}")
     print(f"Input shape: [1, 3, {INPUT_SIZE}, {INPUT_SIZE}] (fixed, no dynamic axes)")
     print(f"Exported to: {output_path}")
     return output_path
 
 
 def validate(backbone_key: str, output_path: str, weights_path: str = None,
-             n_samples: int = 5, atol: float = 1e-4):
+             dense: bool = False, n_samples: int = 5, atol: float = 1e-4):
     import numpy as np
     import onnxruntime as ort
     import torch
 
-    model, _ = build_model(backbone_key, weights_path)
+    model, _ = build_model(backbone_key, weights_path, dense=dense)
     session = ort.InferenceSession(output_path, providers=["CPUExecutionProvider"])
+    out_name = "patch_tokens" if dense else "embedding"
 
     max_diff = 0.0
     for _ in range(n_samples):
         x = torch.randn(1, 3, INPUT_SIZE, INPUT_SIZE)
         with torch.no_grad():
             torch_out = model(x).numpy()
-        onnx_out = session.run(["embedding"], {"image": x.numpy()})[0]
+        onnx_out = session.run([out_name], {"image": x.numpy()})[0]
         diff = float(np.max(np.abs(torch_out - onnx_out)))
         max_diff = max(max_diff, diff)
 
@@ -157,12 +199,17 @@ def main():
                           "ImageNet-pretrained weights (the existing frozen-baseline behavior, unchanged).")
     ap.add_argument("--validate", action="store_true",
                      help="Reload the exported graph via onnxruntime and diff against live PyTorch output")
+    ap.add_argument("--dense", action="store_true",
+                     help="Export the per-patch token grid [1, n_patch, C] (output 'patch_tokens') "
+                          "instead of the pooled retrieval embedding -- for STRATEGY.md's Phase 2+ "
+                          "dense/semantic matching direction (DinoDenseMatching). Same weights, "
+                          "different readout.")
     args = ap.parse_args()
 
-    export(args.backbone, args.output, args.weights)
+    export(args.backbone, args.output, args.weights, dense=args.dense)
 
     if args.validate:
-        ok = validate(args.backbone, args.output, args.weights)
+        ok = validate(args.backbone, args.output, args.weights, dense=args.dense)
         if not ok:
             sys.exit(1)
 
