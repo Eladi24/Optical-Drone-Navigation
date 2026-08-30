@@ -97,9 +97,9 @@ add_library(DroneNavigation
 target_link_libraries(DroneNavigation ${OpenCV_LIBS} ${CURL_LIBRARIES} Threads::Threads)
 if(DRONENAV_ENABLE_ONNX)
     # STRATEGY.md Phase 2 learned retrieval/matching (see include/OnnxDeitRetrieval.hpp,
-    # include/XFeatMatching.hpp, include/DiskLightGlueMatching.hpp).
+    # include/XFeatMatching.hpp, include/DiskLightGlueMatching.hpp, include/DinoDenseMatching.hpp).
     target_sources(DroneNavigation PRIVATE src/OnnxDeitRetrieval.cpp src/XFeatMatching.cpp
-                                            src/DiskLightGlueMatching.cpp)
+                                            src/DiskLightGlueMatching.cpp src/DinoDenseMatching.cpp)
     target_link_libraries(DroneNavigation onnxruntime)
 endif()
 

@@ -23,6 +23,7 @@
 #include "OnnxDeitRetrieval.hpp"
 #include "XFeatMatching.hpp"
 #include "DiskLightGlueMatching.hpp"
+#include "DinoDenseMatching.hpp"
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
@@ -114,6 +115,17 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<OnnxDeitRetrieval>("models/dinov2_s_finetuned_retrieval.onnx"),
                 std::make_unique<DiskLightGlueMatching>(),
                 "split_finetuned_disk");
+
+        // STRATEGY.md Phase 2+ dense semantic matching (arXiv:2506.09748): same
+        // fine-tuned DINOv2-S retrieval as SPLIT_FINETUNED_DISK, matching swapped
+        // to DinoDenseMatching (dense DINOv2 patch-token correlation) -- isolates
+        // the matching variable against SPLIT_FINETUNED_DISK. See CLAUDE.md's
+        // "Option A" Investigation Log.
+        case PositionAlgorithm::SPLIT_FINETUNED_DINO:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>("models/dinov2_s_finetuned_retrieval.onnx"),
+                std::make_unique<DinoDenseMatching>(),
+                "split_finetuned_dino");
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).

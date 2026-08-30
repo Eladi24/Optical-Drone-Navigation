@@ -32,24 +32,49 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import uavvisloc_grid as grid  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
-INPUT_SIZE = 224
-GRID = 16                       # 224 / 14 patch size
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
 M_PER_DEG_LAT = 111320.0
 
+# module-level so patch_centres_px / callers see the resolved grid
+INPUT_SIZE = 224
+GRID = 16
+SPATIAL_R = 0   # GMS-style spatial-consistency filter radius (grid cells); 0 = off
+SPATIAL_T = 3   # min supporting neighbour matches
+
 
 class DenseEmbedder:
-    def __init__(self, onnx_path):
-        self.sess = ort.InferenceSession(str(onnx_path),
-                                         providers=["CPUExecutionProvider"])
+    """ONNX (fixed 224) OR live PyTorch (any --img-size, dynamic_img_size) --
+    the latter lets a 448/32x32 grid be tried without a new ONNX export first."""
+    def __init__(self, onnx_path=None, weights=None, img_size=224):
+        global INPUT_SIZE, GRID
+        INPUT_SIZE = img_size
+        self.torch = onnx_path is None
+        if self.torch:
+            import torch, timm
+            self._torch = torch
+            m = timm.create_model("vit_small_patch14_dinov2", pretrained=False,
+                                  num_classes=0, img_size=224, dynamic_img_size=True)
+            m.load_state_dict(torch.load(weights, map_location="cpu"), strict=True)
+            m.eval()
+            self.m = m
+            self.n_prefix = int(m.num_prefix_tokens)
+        else:
+            self.sess = ort.InferenceSession(str(onnx_path),
+                                             providers=["CPUExecutionProvider"])
+        GRID = INPUT_SIZE // 14
 
     def __call__(self, bgr):
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
         rgb = cv2.resize(rgb, (INPUT_SIZE, INPUT_SIZE)).astype(np.float32) / 255.0
         rgb = (rgb - IMAGENET_MEAN) / IMAGENET_STD
-        blob = np.transpose(rgb, (2, 0, 1))[None]           # [1,3,224,224]
-        tok = self.sess.run(["patch_tokens"], {"image": blob})[0][0]  # [256,384]
+        blob = np.transpose(rgb, (2, 0, 1))[None]
+        if self.torch:
+            with self._torch.no_grad():
+                f = self.m.forward_features(self._torch.from_numpy(blob))
+            tok = f[0, self.n_prefix:, :].numpy()
+        else:
+            tok = self.sess.run(["patch_tokens"], {"image": blob})[0][0]
         tok = tok / (np.linalg.norm(tok, axis=1, keepdims=True) + 1e-8)
         return tok.astype(np.float32)
 
@@ -82,9 +107,29 @@ def match_and_homography(frame_tok, crop_tok, frame_side, crop_side, cos_thr,
     keep = mutual & (S[fi, f2c] >= cos_thr)
     if keep.sum() < 8:
         return 0, None
-    fpx = patch_centres_px(frame_side)[fi[keep]]
-    cpx = patch_centres_px(crop_side)[f2c[keep]]
-    H, mask = cv2.findHomography(fpx, cpx, cv2.RANSAC, 5.0)
+
+    idx = np.where(keep)[0]                          # surviving frame-token indices
+    j = f2c[idx]                                     # their matched crop-token indices
+    fr = np.stack([idx // GRID, idx % GRID], 1)      # frame (row,col) per match
+    cr = np.stack([j // GRID, j % GRID], 1)          # crop  (row,col) per match
+    if SPATIAL_R > 0 and len(idx) >= 4:
+        # GMS-style spatial-consistency filter (the paper's "structural
+        # constraint", done classically): keep a match only if enough OTHER
+        # matches sit in BOTH its frame-grid and crop-grid neighbourhood --
+        # a locally coherent cluster, not an isolated random correspondence.
+        df = np.abs(fr[:, None, :] - fr[None, :, :]).max(2)   # Chebyshev grid dist, frame side
+        dc = np.abs(cr[:, None, :] - cr[None, :, :]).max(2)   # ... crop side
+        support = ((df <= SPATIAL_R) & (dc <= SPATIAL_R)).sum(1) - 1  # exclude self
+        sk = support >= SPATIAL_T
+        if sk.sum() < 8:
+            return 0, None
+        idx, j = idx[sk], j[sk]
+    fpx = patch_centres_px(frame_side)[idx]
+    cpx = patch_centres_px(crop_side)[j]
+    # RANSAC threshold = one patch cell (~14 px, constant across img-size): the
+    # correspondences are grid-quantized, so a tighter threshold rejects correct
+    # ones as outliers (found the hard way in the first C++ build).
+    H, mask = cv2.findHomography(fpx, cpx, cv2.RANSAC, frame_side / GRID)
     if H is None:
         return 0, None
     return int(mask.sum()), H
@@ -94,25 +139,34 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--flight", default="01")
     ap.add_argument("--model", default="models/dinov2_s_finetuned_dense.onnx")
+    ap.add_argument("--torch-weights", default=None,
+                    help="use live PyTorch (checkpoints/dinov2_s_finetuned.pt) instead of ONNX")
+    ap.add_argument("--img-size", type=int, default=224,
+                    help="only with --torch-weights; 448 -> 32x32 grid")
     ap.add_argument("--n-frames", type=int, default=30)
     ap.add_argument("--n-decoys", type=int, default=9)
     ap.add_argument("--cos-thr", type=float, default=0.5)
+    ap.add_argument("--spatial-r", type=int, default=0, help="GMS spatial-consistency radius in grid cells (0=off)")
+    ap.add_argument("--spatial-t", type=int, default=3)
     ap.add_argument("--ratio", type=float, default=1.0, help="cosine ratio test; <1 stricter")
     ap.add_argument("--hard-decoys", action="store_true",
                     help="Use the retrieval model's own top-k grid cells as decoys "
                          "(the real operating condition) instead of random far cells.")
     ap.add_argument("--retrieval-model", default="models/dinov2_s_finetuned_retrieval.onnx")
     args = ap.parse_args()
+    global SPATIAL_R, SPATIAL_T
+    SPATIAL_R, SPATIAL_T = args.spatial_r, args.spatial_t
 
-    emb = DenseEmbedder(REPO / args.model)
+    emb = (DenseEmbedder(weights=str(REPO / args.torch_weights), img_size=args.img_size)
+           if args.torch_weights else DenseEmbedder(REPO / args.model))
     ret = None
     if args.hard_decoys:
         ret = ort.InferenceSession(str(REPO / args.retrieval_model),
                                    providers=["CPUExecutionProvider"])
 
-    def gemb(bgr):
+    def gemb(bgr):  # retrieval model is fixed at 224, independent of the dense --img-size
         rgb = cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-        rgb = cv2.resize(rgb, (INPUT_SIZE, INPUT_SIZE)).astype(np.float32) / 255.0
+        rgb = cv2.resize(rgb, (224, 224)).astype(np.float32) / 255.0
         rgb = (rgb - IMAGENET_MEAN) / IMAGENET_STD
         blob = np.transpose(rgb, (2, 0, 1))[None]
         v = ret.run(["embedding"], {"image": blob})[0][0]

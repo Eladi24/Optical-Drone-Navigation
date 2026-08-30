@@ -720,6 +720,8 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::SPLIT_LEARNED_DISK;
         else if (algo_str == "split_finetuned_disk" || algo_str == "SPLIT_FINETUNED_DISK")
             algorithm = PositionAlgorithm::SPLIT_FINETUNED_DISK;
+        else if (algo_str == "split_finetuned_dino" || algo_str == "SPLIT_FINETUNED_DINO")
+            algorithm = PositionAlgorithm::SPLIT_FINETUNED_DINO;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }

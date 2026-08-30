@@ -130,7 +130,7 @@ enum class PositionAlgorithm {
                        // combines two already-individually-measured wins to see whether
                        // they compound the way SPLIT_LEARNED's did. See CLAUDE.md's
                        // Phase 2 Investigation Log.
-    SPLIT_FINETUNED_DISK // STRATEGY.md Phase 2 fine-tuning Stage 4: SplitPipelineEstimator,
+    SPLIT_FINETUNED_DISK, // STRATEGY.md Phase 2 fine-tuning Stage 4: SplitPipelineEstimator,
                        // same shape as SPLIT_LEARNED_DISK but the retrieval stage points at
                        // models/dinov2_s_finetuned_retrieval.onnx (the DINOv2-S backbone
                        // fine-tuned on dev+validation flights via Colab, see CLAUDE.md's
@@ -138,6 +138,12 @@ enum class PositionAlgorithm {
                        // DeiT-Tiny model -- isolates the fine-tuning variable against
                        // SPLIT_LEARNED_DISK's already-recorded frozen-retrieval baseline,
                        // both paired with the same DISK+LightGlue matching stage.
+    SPLIT_FINETUNED_DINO // STRATEGY.md Phase 2+ dense semantic matching (arXiv:2506.09748):
+                       // SplitPipelineEstimator with the same fine-tuned DINOv2-S retrieval
+                       // as SPLIT_FINETUNED_DISK, but DISK+LightGlue matching swapped for
+                       // DinoDenseMatching (dense DINOv2 patch-token correlation + mutual-NN
+                       // + RANSAC homography). Isolates the matching variable against
+                       // SPLIT_FINETUNED_DISK. See CLAUDE.md's "Option A" Investigation Log.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);
