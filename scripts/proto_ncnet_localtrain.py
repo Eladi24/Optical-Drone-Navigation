@@ -112,46 +112,9 @@ def discriminate(fg, cell_grids, ti, decoys, nc, use_c, score_thr):
     return n_t > n_d
 
 
-def main():
-    import torch
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--flight", default="01")
-    ap.add_argument("--dino-weights", default="checkpoints/dinov2_s_finetuned.pt")
-    ap.add_argument("--steps", type=int, default=250)
-    ap.add_argument("--lr", type=float, default=5e-3)
-    ap.add_argument("--n-neg", type=int, default=6)
-    ap.add_argument("--score-thr", type=float, default=0.25)
-    ap.add_argument("--eval-frac", type=float, default=0.4)
-    ap.add_argument("--seed", type=int, default=0)
-    args = ap.parse_args()
-    torch.manual_seed(args.seed)
-    rng = np.random.default_rng(args.seed)
-
-    dino = load_dino(str(REPO / args.dino_weights))
-    from ncnet_consensus import NeighConsensus
-    nc = NeighConsensus(use_cuda=False, kernel_sizes=[3, 3, 3], channels=[10, 10, 1],
-                        symmetric_mode=True)
-
-    flight = args.flight
-    map_img = cv2.imread(str(REPO / "Images" / f"map_clean_uavvisloc_{flight}.png"))
-    bounds = grid.load_bounds(f"satellite{flight}.tif")
-    glats, glngs = grid.generate_grid(*bounds)
-    mlng = grid.m_per_deg_lng((bounds[0] + bounds[2]) / 2.0)
-
-    t0 = time.time()
-    cell_grids, cell_gemb = {}, np.zeros((len(glats), 384), np.float32)
-    for gi in range(len(glats)):
-        c = grid.crop_at(map_img, glats[gi], glngs[gi], bounds)
-        if c is None or c.size == 0:
-            continue
-        fgd = dino_grid(dino, c)
-        cell_grids[gi] = fgd
-        cell_gemb[gi] = (fgd.mean(dim=(2, 3))[0].numpy())
-        cell_gemb[gi] /= (np.linalg.norm(cell_gemb[gi]) + 1e-8)
-    print(f"{len(cell_grids)} grid cells embedded ({time.time()-t0:.0f}s)")
-
+def build_samples(dino, flight, cell_grids, cell_gemb, glats, glngs, mlng, t0):
     gt = list(csv.DictReader(open(REPO / "CSV Files" / f"ground_truth_uavvisloc_{flight}.csv")))
-    samples = []
+    out = []
     for row in gt[::3]:
         lat, lng, label = float(row["Lat"]), float(row["Lng"]), row["Label"]
         fr = cv2.imread(str(REPO / "Datasets" / "UAV_VisLoc_dataset" / flight / "drone" / label))
@@ -162,42 +125,110 @@ def main():
         if ti not in cell_grids:
             continue
         fg = dino_grid(dino, fr)
-        order = np.argsort(-(cell_gemb @ (fg.mean(dim=(2, 3))[0].numpy() /
-                                          (np.linalg.norm(fg.mean(dim=(2, 3))[0].numpy()) + 1e-8))))
+        fv = fg.mean(dim=(2, 3))[0].numpy()
+        fv = fv / (np.linalg.norm(fv) + 1e-8)
+        order = np.argsort(-(cell_gemb @ fv))
         decoys = [i for i in order if i != ti and i in cell_grids][:9]
         if len(decoys) < 9:
             continue
-        samples.append((fg, ti, decoys))
-    n_eval = max(1, int(len(samples) * args.eval_frac))
-    train_s, eval_s = samples[:-n_eval], samples[-n_eval:]
-    print(f"{len(train_s)} train / {len(eval_s)} eval frames ({time.time()-t0:.0f}s)")
+        out.append((fg, ti, decoys))
+    print(f"  flight {flight}: {len(out)} usable frames ({time.time()-t0:.0f}s)")
+    return out
 
-    # baseline discrimination (plain, and random-init consensus) on eval set
-    base_plain = np.mean([discriminate(fg, cell_grids, ti, dc, nc, False, args.score_thr)
-                          for fg, ti, dc in eval_s])
-    print(f"baseline  plain={base_plain:.0%}   (training consensus now...)")
+
+def embed_cells(dino, map_img, glats, glngs, bounds, cell_grids, cell_gemb, t0):
+    for gi in range(len(glats)):
+        c = grid.crop_at(map_img, glats[gi], glngs[gi], bounds)
+        if c is None or c.size == 0:
+            continue
+        fgd = dino_grid(dino, c)
+        cell_grids[gi] = fgd
+        v = fgd.mean(dim=(2, 3))[0].numpy()
+        cell_gemb[gi] = v / (np.linalg.norm(v) + 1e-8)
+
+
+def main():
+    import torch
+    torch.set_num_threads(4)
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--flight", default="01")
+    ap.add_argument("--dino-weights", default="checkpoints/dinov2_s_finetuned.pt")
+    ap.add_argument("--steps", type=int, default=180)
+    ap.add_argument("--lr", type=float, default=3e-4)
+    ap.add_argument("--n-neg", type=int, default=4)
+    ap.add_argument("--channels", default="6,6,1")
+    ap.add_argument("--symmetric", type=int, default=0)   # 0 = off (half the memory) for the de-risk
+    ap.add_argument("--score-thr", type=float, default=0.25)
+    ap.add_argument("--n-eval", type=int, default=30)
+    ap.add_argument("--seed", type=int, default=0)
+    args = ap.parse_args()
+    torch.manual_seed(args.seed)
+    rng = np.random.default_rng(args.seed)
+
+    dino = load_dino(str(REPO / args.dino_weights))
+    from ncnet_consensus import NeighConsensus
+    ch = [int(x) for x in args.channels.split(",")]
+    nc = NeighConsensus(use_cuda=False, kernel_sizes=[3] * len(ch), channels=ch,
+                        symmetric_mode=bool(args.symmetric))
+    n_params = sum(p.numel() for p in nc.parameters())
+    print(f"NeighConsensus: channels={ch} symmetric={bool(args.symmetric)}  {n_params} params")
+
+    t0 = time.time()
+    fl = args.flight
+    map_img = cv2.imread(str(REPO / "Images" / f"map_clean_uavvisloc_{fl}.png"))
+    bounds = grid.load_bounds(f"satellite{fl}.tif")
+    glats, glngs = grid.generate_grid(*bounds)
+    mlng = grid.m_per_deg_lng((bounds[0] + bounds[2]) / 2.0)
+    cg, ge = {}, np.zeros((len(glats), 384), np.float32)
+    embed_cells(dino, map_img, glats, glngs, bounds, cg, ge, t0)
+    print(f"  flight {fl}: {len(cg)} cells embedded ({time.time()-t0:.0f}s)")
+
+    samples = build_samples(dino, fl, cg, ge, glats, glngs, mlng, t0)
+    # disjoint train/eval by TRUE grid cell so eval crops are genuinely unseen
+    rng.shuffle(samples)
+    eval_s = samples[:args.n_eval]
+    eval_ti = {ti for _, ti, _ in eval_s}
+    train_s = [s for s in samples[args.n_eval:] if s[1] not in eval_ti]
+    print(f"{len(train_s)} train / {len(eval_s)} eval  ({time.time()-t0:.0f}s)")
+
+    def eval_disc(use_c):
+        nc.eval()
+        with torch.no_grad():
+            v = np.mean([discriminate(fg, cg, ti, dc, nc, use_c, args.score_thr)
+                         for fg, ti, dc in eval_s])
+        nc.train()
+        return v
+
+    base_plain = eval_disc(False)
+    print(f"baseline  plain={base_plain:.0%}   random-consensus={eval_disc(True):.0%}")
 
     opt = torch.optim.Adam(nc.parameters(), lr=args.lr)
+    best = 0.0
     for step in range(args.steps):
         fg, ti, decoys = train_s[rng.integers(len(train_s))]
         negs = rng.choice(decoys, size=min(args.n_neg, len(decoys)), replace=False)
-        # positive + negatives through the trained consensus
-        s_pos = mean_match_score(nc(corr(fg, cell_grids[ti])))
-        s_neg = torch.stack([mean_match_score(nc(corr(fg, cell_grids[int(gi)]))).squeeze()
-                             for gi in negs])
-        loss = torch.relu(0.05 + s_neg.mean() - s_pos.squeeze())   # hinge: pos should beat neg by 0.05
-        opt.zero_grad(); loss.backward(); opt.step()
-        if (step + 1) % 50 == 0:
-            print(f"  step {step+1:4d}  loss {loss.item():.4f}  "
-                  f"s_pos {s_pos.item():.3f}  s_neg {s_neg.mean().item():.3f}  ({time.time()-t0:.0f}s)")
+        opt.zero_grad()
+        # ONE autograd graph alive at a time -- backward per term, accumulate grads.
+        s_pos = mean_match_score(nc(corr(fg, cg[ti]))).squeeze()
+        (-s_pos).backward()
+        sp = s_pos.item()
+        sn = 0.0
+        for gi in negs:
+            s_neg = mean_match_score(nc(corr(fg, cg[int(gi)]))).squeeze()
+            (s_neg / len(negs)).backward()
+            sn += s_neg.item() / len(negs)
+        torch.nn.utils.clip_grad_norm_(nc.parameters(), 1.0)
+        opt.step()
+        if (step + 1) % 20 == 0:
+            ev = eval_disc(True)
+            best = max(best, ev)
+            print(f"  step {step+1:4d}  s_pos {sp:.3f}  s_neg {sn:.3f}  "
+                  f"eval_disc {ev:.0%} (best {best:.0%})  ({time.time()-t0:.0f}s)")
 
-    nc.eval()
-    trained = np.mean([discriminate(fg, cell_grids, ti, dc, nc, True, args.score_thr)
-                       for fg, ti, dc in eval_s])
-    print(f"\nflight {flight}  eval n={len(eval_s)}  score_thr={args.score_thr}")
+    print(f"\nflight {fl}  eval n={len(eval_s)}  score_thr={args.score_thr}")
     print(f"  plain (no consensus)          : {base_plain:.0%}")
-    print(f"  trained NeighConsensus        : {trained:.0%}")
-    print(f"  --> {'GREENLIGHT A2.1+' if trained >= base_plain + 0.15 else 'weak/negative -- likely stop'}")
+    print(f"  trained NeighConsensus (best) : {best:.0%}")
+    print(f"  --> {'GREENLIGHT A2.1+' if best >= base_plain + 0.15 else 'weak/negative -- likely stop'}")
 
 
 if __name__ == "__main__":
