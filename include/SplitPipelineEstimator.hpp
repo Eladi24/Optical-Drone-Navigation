@@ -30,7 +30,17 @@ public:
                             std::unique_ptr<IMatchingStage> matching,
                             std::string name,
                             int top_k = 10,
-                            int num_threads = 4);
+                            int num_threads = 4,
+                            // Optional pose refiner: once `matching` has picked the winning crop
+                            // by inlier count, `refiner->match(frame, winning_crop)` is run and,
+                            // if it returns a usable homography, ITS homography (not `matching`'s)
+                            // is used for the continuous-position projection. Confidence and
+                            // candidate ranking stay entirely `matching`'s -- the refiner is not
+                            // a discriminator, only a better pose on an already-chosen crop.
+                            // nullptr (every existing config) -> behavior byte-identical.
+                            // See CLAUDE.md's "Option A" Investigation Log for why this exists
+                            // (dense DINOv2 matching gives ~35m poses but can't pick the crop).
+                            std::unique_ptr<IMatchingStage> refiner = nullptr);
 
     void precompute(const std::vector<ReferenceCrop>& crops) override;
     void setFeatureMask(const cv::Mat& mask) override;
@@ -48,6 +58,7 @@ public:
 private:
     std::unique_ptr<IRetrievalStage> retrieval_;
     std::unique_ptr<IMatchingStage> matching_;
+    std::unique_ptr<IMatchingStage> refiner_;  // optional, see constructor
     std::string name_;
     int top_k_;
 

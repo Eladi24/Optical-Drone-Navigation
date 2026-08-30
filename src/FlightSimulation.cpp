@@ -127,6 +127,18 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<DinoDenseMatching>(),
                 "split_finetuned_dino");
 
+        // STRATEGY.md Phase 2+ Option A pose-refiner: SPLIT_FINETUNED_DISK's
+        // retrieval + matching pick the crop; a DinoDenseMatching refiner then
+        // replaces the winning homography with the tighter dense-DINOv2 pose.
+        // See CLAUDE.md's "Option A" Investigation Log.
+        case PositionAlgorithm::SPLIT_FINETUNED_DISK_REFINED:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxDeitRetrieval>("models/dinov2_s_finetuned_retrieval.onnx"),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_finetuned_disk_refined",
+                /*top_k=*/10, /*num_threads=*/4,
+                std::make_unique<DinoDenseMatching>());
+
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
         // createPositionEstimator should never be called for it — fall through

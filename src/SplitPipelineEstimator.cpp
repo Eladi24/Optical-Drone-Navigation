@@ -32,9 +32,11 @@ SplitPipelineEstimator::SplitPipelineEstimator(std::unique_ptr<IRetrievalStage> 
                                                 std::unique_ptr<IMatchingStage> matching,
                                                 std::string name,
                                                 int top_k,
-                                                int num_threads)
+                                                int num_threads,
+                                                std::unique_ptr<IMatchingStage> refiner)
     : retrieval_(std::move(retrieval))
     , matching_(std::move(matching))
+    , refiner_(std::move(refiner))
     , name_(std::move(name))
     , top_k_(top_k)
     , pool_(static_cast<size_t>(std::max(1, num_threads)))
@@ -50,6 +52,7 @@ void SplitPipelineEstimator::setFeatureMask(const cv::Mat& mask)
 {
     retrieval_->setFeatureMask(mask);
     matching_->setFeatureMask(mask);
+    if (refiner_) refiner_->setFeatureMask(mask);
 }
 
 void SplitPipelineEstimator::setGeoReference(double mpp, double meters_per_degree_lat,
@@ -144,6 +147,19 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
         PositionEstimate result(last_position, 0.0, -1);
         result.measurement_valid = false;
         return result;
+    }
+
+    // Optional pose refinement: `matching_` has chosen the winning crop by
+    // inlier count; if a `refiner_` is configured, re-match that ONE crop with
+    // it and, when it yields a usable homography, project through that instead.
+    // The refiner is not a discriminator -- confidence and candidate ranking
+    // stay entirely `matching_`'s. Motivated by CLAUDE.md's "Option A" log:
+    // dense DINOv2 matching gives a much tighter pose (~35m vs ~74m PDM@5) on an
+    // already-correctly-chosen crop but cannot pick the crop itself.
+    if (refiner_) {
+        MatchResult r = refiner_->match(drone_view, reference_crops[best_idx]);
+        if (!r.homography.empty() && r.inliers > 0)
+            best_H = r.homography;
     }
 
     // Continuous position refinement: project the drone frame's center
