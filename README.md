@@ -22,8 +22,8 @@ telemetry-labeled aerial imagery dataset with dense GPS ground truth for quantit
 - **Modular retrieval/matching pipeline**: candidate-crop retrieval and geometric match verification
   are split behind independent interfaces (`IRetrievalStage`/`IMatchingStage`), so a retrieval or
   matching implementation can be swapped and benchmarked in isolation. Classical (color histogram +
-  ORB/RANSAC) and learned (frozen DeiT-Tiny retrieval, XFeat local matching, via ONNX Runtime)
-  implementations are both in place and directly comparable.
+  ORB/RANSAC) and learned (frozen and fine-tuned transformer retrieval, XFeat and DISK+LightGlue
+  local matching, via ONNX Runtime) implementations are both in place and directly comparable.
 - **Three position-fusion strategies**: a 4-state Kalman filter with adaptive, confidence-weighted
   noise and outlier rejection; a particle filter maintaining multiple position hypotheses
   simultaneously rather than committing to a single belief; and an offline trajectory-level batch
@@ -113,6 +113,8 @@ Actively investigated rather than a finished product. The core pipeline, all thr
 and the evaluation harness are complete and working. A systematic bottleneck diagnosis — instrumenting
 retrieval accuracy independently of match verification and fusion — pinpointed candidate retrieval,
 not feature matching itself, as the dominant source of error, motivating the retrieval/matching split
-and the learned (ONNX Runtime) implementations now in place alongside the classical baseline. Current
-work is on trajectory-level fusion and visual-inertial odometry as complementary levers on the
-remaining accuracy gap, and on broadening validation across additional real-world flight data.
+and the learned (ONNX Runtime) implementations now in place alongside the classical baseline.
+Trajectory-level batch fusion has since been evaluated on held-out flights: it consistently reduces
+error but does not, on its own, close the gap to precision positioning — consistent with the
+retrieval-bound diagnosis. Current work targets retrieval quality directly: stronger learned feature
+aggregation and fresher single-source reference imagery.

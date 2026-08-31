@@ -145,13 +145,21 @@ enum class PositionAlgorithm {
                        // + RANSAC homography). Isolates the matching variable against
                        // SPLIT_FINETUNED_DISK. See CLAUDE.md's "Option A" Investigation Log.
                        // NEGATIVE result -- kept wired as documentation.
-    SPLIT_FINETUNED_DISK_REFINED // STRATEGY.md Phase 2+ Option A, pose-refiner variant:
+    SPLIT_FINETUNED_DISK_REFINED, // STRATEGY.md Phase 2+ Option A, pose-refiner variant:
                        // exactly SPLIT_FINETUNED_DISK (fine-tuned DINOv2 retrieval +
                        // DISK+LightGlue matching pick the crop), but a DinoDenseMatching
                        // refiner replaces the winning homography with the dense-DINOv2
                        // pose (~35m vs DISK+LightGlue's ~74m PDM@5 on an already-correct
                        // crop). Discrimination stays DISK+LightGlue's; only the pose
                        // changes. See CLAUDE.md's "Option A" Investigation Log.
+    SPLIT_VLAD_DISK    // RESULTS.md route #2 / AnyLoc: SplitPipelineEstimator, same
+                       // shape as SPLIT_FINETUNED_DISK but retrieval swapped from a
+                       // pooled DINOv2 embedding to VLAD aggregation over the fine-tuned
+                       // DINOv2 dense patch features (OnnxVladRetrieval), matching held
+                       // at DISK+LightGlue -- isolates the VLAD-vs-pooled retrieval
+                       // variable against SPLIT_FINETUNED_DISK. Python pre-measurement:
+                       // best held-out pure-embedding recall@k in the project. See
+                       // CLAUDE.md's "VLAD retrieval" Investigation Log.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

@@ -79,4 +79,8 @@ checkpoints/
 # Ignore Python bytecode cache (scripts/run_benchmark.py importing
 # scripts/evaluate_ground_truth.py as a module generates this)
 __pycache__/
+# Ignore session scratch files -- ad-hoc experiment runners and their logs,
+# not part of the repo (real scripts live in scripts/, real logs are transient)
+scratch_*
+*.log
 

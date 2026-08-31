@@ -21,6 +21,7 @@
 #include "HistogramRetrieval.hpp"
 #include "OrbRansacMatching.hpp"
 #include "OnnxDeitRetrieval.hpp"
+#include "OnnxVladRetrieval.hpp"
 #include "XFeatMatching.hpp"
 #include "DiskLightGlueMatching.hpp"
 #include "DinoDenseMatching.hpp"
@@ -138,6 +139,21 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 "split_finetuned_disk_refined",
                 /*top_k=*/10, /*num_threads=*/4,
                 std::make_unique<DinoDenseMatching>());
+
+        // RESULTS.md route #2 / AnyLoc (arXiv:2308.00688): same pairing as
+        // SPLIT_FINETUNED_DISK, but retrieval swapped from OnnxDeitRetrieval's
+        // pooled fine-tuned DINOv2 embedding to OnnxVladRetrieval's VLAD
+        // aggregation over that backbone's dense patch features -- isolates the
+        // VLAD-vs-pooled retrieval variable, matching held at DISK+LightGlue.
+        // Vocabulary: models/vlad_vocab_finetuned_k64.bin
+        // (scripts/export_vlad_vocab.py). See CLAUDE.md's "VLAD retrieval"
+        // Investigation Log.
+        case PositionAlgorithm::SPLIT_VLAD_DISK:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxVladRetrieval>("models/dinov2_s_finetuned_dense.onnx",
+                                                    "models/vlad_vocab_finetuned_k64.bin"),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_vlad_disk");
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
