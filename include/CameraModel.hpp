@@ -15,6 +15,14 @@ namespace CameraModel {
 // Assumed horizontal field of view until real per-video camera metadata is available.
 constexpr double kDefaultHfovDeg = 70.0;
 
+// UAV-VisLoc's camera, MEASURED (2026-11-16) rather than assumed: effective focal length from
+// consecutive-still registration (scripts/stills_visual_odometry.py) vs. GPS step length and
+// above-ground height, fitted on dev flights 01/03 (51.4/51.6 deg) and confirmed on
+// validation flights 04/08/10 (51.6/51.3/51.6 deg -- flight 10 despite its different 3000px
+// image width). The 70 deg default overstated this dataset's GSD by ~1.45x on every flight.
+// See INVESTIGATION_LOG.md -> "Altitude-Datum and HFOV Bugs".
+constexpr double kUavVisLocHfovDeg = 51.5;
+
 // Real-world width (metres) of a frame's footprint at the given altitude.
 inline double frameFootprintMeters(double altitude_m, double hfov_deg = kDefaultHfovDeg) {
     double hfov_rad = hfov_deg * M_PI / 180.0;

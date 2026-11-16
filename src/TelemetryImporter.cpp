@@ -87,12 +87,16 @@ TelemetryImportResult importUavVisLocTelemetry(const std::string& csv_path,
 
     std::string gt_path = "CSV Files/ground_truth_" + sample_name + ".csv";
     std::ofstream gt(gt_path);
+    // Default stream precision is 6 SIGNIFICANT digits -- that truncated lng 115.9747973 to
+    // 115.975 (~48 m at 30N) and cost 15-26 m mean / 50 m max of ground-truth error.
+    gt << std::setprecision(12);
     gt << "Frame,Time_Sec,Lat,Lng,Label\n";
     for (auto& r : rows)
         gt << r.num << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.filename << "\n";
 
     std::string telem_path = "CSV Files/telemetry_" + sample_name + ".csv";
     std::ofstream telem(telem_path);
+    telem << std::setprecision(12);
     telem << "Frame,Time_Sec,Lat,Lng,Alt,Heading\n";
     for (auto& r : rows)
         telem << r.num << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.height << "," << r.phi1 << "\n";

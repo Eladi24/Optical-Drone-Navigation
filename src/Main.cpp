@@ -574,8 +574,30 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
     for (char& c : stem) if (c == '/' || c == '\\' || c == ' ') c = '_';
     std::string altitude_cache_path = "masks/" + stem + "_altitude.txt";
     {
+        // UAV-VisLoc's `height` is NOT above-ground over elevated terrain (flights 05/06/10/11
+        // sit on 480-1950 m terrain -- a 2.6-6.5x GSD error). When scripts/compute_uavvisloc_agl.py
+        // has produced a per-still AGL CSV (height minus Copernicus DEM terrain), its mean AGL is
+        // authoritative and OVERWRITES any stale cache; otherwise the original behaviour stands.
+        double agl_sum = 0.0;
+        int agl_n = 0;
+        std::ifstream agl_in("CSV Files/agl_" + cfg.sample_name + ".csv");
+        std::string line;
+        if (agl_in.good() && std::getline(agl_in, line)) {          // header: Num,Height,Terrain,AGL
+            while (std::getline(agl_in, line)) {
+                auto pos = line.rfind(',');
+                if (pos == std::string::npos) continue;
+                agl_sum += std::stod(line.substr(pos + 1));
+                ++agl_n;
+            }
+        }
         std::ifstream existing(altitude_cache_path);
-        if (!existing.good()) {
+        if (agl_n > 0) {
+            existing.close();
+            std::ofstream out(altitude_cache_path);
+            out << (agl_sum / agl_n);
+            std::cout << "  Altitude: mean AGL " << (agl_sum / agl_n) << " m from agl_" << cfg.sample_name
+                      << ".csv (raw telemetry height mean " << telemetry.mean_altitude_m << " m)" << std::endl;
+        } else if (!existing.good()) {
             std::ofstream out(altitude_cache_path);
             out << telemetry.mean_altitude_m;
         }
@@ -613,7 +635,11 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
 
     double altitude_m = meta.estimated_mean_altitude > 0 ? meta.estimated_mean_altitude
                                                           : telemetry.mean_altitude_m;
-    double video_frame_gsd = CameraModel::groundSampleDistance(altitude_m, meta.width);
+    // Every dataset sample is UAV-VisLoc today; its camera HFOV is measured, not the 70 deg default.
+    double video_frame_gsd = CameraModel::groundSampleDistance(altitude_m, meta.width,
+                                                               CameraModel::kUavVisLocHfovDeg);
+    std::cout << "  Camera HFOV " << CameraModel::kUavVisLocHfovDeg << " deg, altitude " << altitude_m
+              << " m -> GSD " << video_frame_gsd << " m/px" << std::endl;
 
     // ------------------------------------------------------------------
     // STEP 4: Load the pre-converted local satellite map and geo-reference

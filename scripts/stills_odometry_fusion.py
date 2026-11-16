@@ -1,0 +1,312 @@
+#!/usr/bin/env python3
+"""
+RESULTS.md route #1 bridge experiment: does GOOD relative motion + our REAL retrieval
+anchors reach tens of metres?
+
+Inputs per flight:
+  - CSV Files/stills_vo_uavvisloc_<f>.csv  (scripts/stills_visual_odometry.py: image-frame
+    nadir-point displacement between consecutive stills, camera-only; row 2 = full-res size)
+  - CSV Files/agl_uavvisloc_<f>.csv  (optional, scripts/compute_uavvisloc_agl.py: per-still
+    height above ground -- UAV-VisLoc's `height` is NOT AGL over elevated terrain; without
+    this file the raw height is used, fine only for near-sea-level flights 01/02/03/04/08)
+  - Datasets/UAV_VisLoc_dataset/<f>/<f>.csv  (full-precision GT lat/lon -- used ONLY for
+    evaluation and the one-off dev-flight calibration fit -- plus the GNSS-free sensors a
+    real platform has: altitude, IMU attitude Omega/Kappa, compass heading Phi1, time)
+  - CSV Files/video_telemetry_<est>_uavvisloc_uavvisloc_<f>.csv  (per-frame retrieval
+    anchors; its Frame column is the 0-based video index, i.e. still num = Frame + 1)
+
+Sensors assumed (standard GNSS-denied suite): camera, altimeter (AGL), IMU attitude, compass.
+
+Method:
+  1. Odometry model, fitted on dev flights 01/03 only (Huber LSQ):
+       body_step = G @ (agl * img_disp_px / width_px) + B @ d(agl * tan(attitude))
+     G absorbs focal length + camera-mount rotation/mirroring (normalising by image width
+     lets it transfer to the 3000px-wide flights 05/10); B the tilt-induced nadir shift.
+     body (forward, right) -> world (E, N) via compass heading. Failed VO pairs (open water,
+     no texture) -> weak prior: compass heading + recent median speed.
+  2. Local consensus: dead-reckon the odometry from an arbitrary origin (no GT); each anchor
+     votes for an offset o_k = anchor_k - p_k. For each still, among anchors within
+     +-HALF_WIN stills, the offset with the most votes within R wins (>= MIN_SUPPORT votes);
+     position = p_i + mean of the agreeing offsets. Correct anchors agree on one offset while
+     wrong ones scatter -- including repeated "attractor" crops, since the platform moves
+     ~80 m between stills while an attractor stays put.
+
+Why local consensus and not a global robust MAP: measured on dev (2026-11-16), a single
+pose graph with Tukey-robust anchors collapses when <=10% of anchors are correct (fixed
+150 m kernel loses all anchors once the fit is >150 m off), and the odometry carries a
+per-flight, heading-dependent compass deviation (4-10 deg between opposite survey legs) that
+a global chain cannot absorb without per-leg anchors. Local rigidity is what the odometry
+actually provides: 25-50 m RMS over 40 stills (~3 km) after translation+rotation alignment.
+
+Hyperparameters (HALF_WIN, MIN_SUPPORT, R) were swept on dev 01/03 AND validation 04/08/10
+-- validation was looked at, so it is not a clean check; held-out 02/05/06/11 is the gate
+and is only evaluated with an explicit --flights.
+
+Usage:
+  python3 scripts/stills_odometry_fusion.py [--recalibrate] [--flights 01,03,04,08,10]
+  python3 scripts/stills_odometry_fusion.py --flights 01,03 --oracle   # anchor-selection floor
+"""
+import argparse
+import csv
+import json
+import math
+import sys
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+
+REPO = Path(__file__).resolve().parent.parent
+DATA = REPO / "Datasets" / "UAV_VisLoc_dataset"
+CSV_DIR = REPO / "CSV Files"
+OUT_DIR = REPO / "Images" / "stills_fusion"
+CALIB_PATH = CSV_DIR / "stills_vo_calibration.json"
+sys.path.insert(0, str(Path(__file__).parent))
+
+DEV = ["01", "03"]
+VAL = ["04", "08", "10"]
+HELD_OUT = ["02", "05", "06", "11"]
+M_LAT = 111320.0
+
+MIN_VO_INLIERS = 30
+HALF_WIN = 40          # stills either side
+MIN_SUPPORT = 3        # agreeing anchors needed
+R_AGREE = 150.0        # half a reference crop -- the same radius recall@k calls "correct"
+
+
+def m_lng(lat):
+    return M_LAT * math.cos(math.radians(lat))
+
+
+def load_flight(flight, estimator):
+    rows = list(csv.DictReader(open(DATA / flight / f"{flight}.csv", newline="")))
+    lat0, lng0 = float(rows[0]["lat"]), float(rows[0]["lon"])
+    ml = m_lng(lat0)
+    n = len(rows)
+    S = {
+        "num": np.array([int(r["num"]) for r in rows]),
+        "gx": np.array([(float(r["lon"]) - lng0) * ml for r in rows]),
+        "gy": np.array([(float(r["lat"]) - lat0) * M_LAT for r in rows]),
+        "om": np.radians([float(r["Omega"]) for r in rows]),
+        "ka": np.radians([float(r["Kappa"]) for r in rows]),
+        "hdg": np.radians([float(r["Phi1"]) for r in rows]),
+    }
+    t = [datetime.fromisoformat(r["date"]) for r in rows]
+    S["t"] = np.array([(x - t[0]).total_seconds() for x in t])
+    num_to_idx = {v: i for i, v in enumerate(S["num"])}
+
+    agl_path = CSV_DIR / f"agl_uavvisloc_{flight}.csv"
+    if agl_path.exists():
+        agl = {int(r["Num"]): float(r["AGL"]) for r in csv.DictReader(open(agl_path, newline=""))}
+        S["alt"] = np.array([agl[k] for k in S["num"]])
+        S["alt_source"] = "AGL (height - DEM)"
+    else:
+        S["alt"] = np.array([float(r["height"]) for r in rows])
+        S["alt_source"] = "raw height"
+
+    vo_ok = np.zeros(n - 1, bool)
+    vo_d = np.zeros((n - 1, 2))
+    with open(CSV_DIR / f"stills_vo_uavvisloc_{flight}.csv", newline="") as f:
+        for r in csv.DictReader(f):
+            if r["From_Num"].startswith("#"):
+                S["width_px"] = float(r["To_Num"])
+                continue
+            i = num_to_idx[int(r["From_Num"])]
+            if num_to_idx[int(r["To_Num"])] != i + 1:
+                continue
+            if r["Disp_X_Px"] and int(r["Inliers"]) >= MIN_VO_INLIERS:
+                vo_ok[i] = True
+                vo_d[i] = float(r["Disp_X_Px"]), float(r["Disp_Y_Px"])
+    S["vo_ok"], S["vo_d"] = vo_ok, vo_d
+
+    a_idx, ax, ay = [], [], []
+    tel = CSV_DIR / f"video_telemetry_{estimator}_uavvisloc_uavvisloc_{flight}.csv"
+    with open(tel, newline="") as f:
+        for r in csv.DictReader(f):
+            if r.get("Measurement_Valid", "1") not in ("1", "true", "True"):
+                continue
+            num = int(r["Frame"]) + 1
+            if num not in num_to_idx:
+                continue
+            a_idx.append(num_to_idx[num])
+            ax.append((float(r["Raw_Lng"]) - lng0) * ml)
+            ay.append((float(r["Raw_Lat"]) - lat0) * M_LAT)
+    S["a_idx"], S["ax"], S["ay"] = np.array(a_idx, int), np.array(ax), np.array(ay)
+    return S
+
+
+# ---------------------------------------------------------------- odometry model
+def design(S):
+    a, w = S["alt"], S["width_px"]
+    return np.column_stack([
+        a[:-1] * S["vo_d"][:, 0] / w, a[:-1] * S["vo_d"][:, 1] / w,
+        np.diff(a * np.tan(S["om"])), np.diff(a * np.tan(S["ka"])),
+    ])
+
+
+def gt_body_steps(S):
+    dE, dN = np.diff(S["gx"]), np.diff(S["gy"])
+    h = S["hdg"][:-1]
+    return np.column_stack([dN * np.cos(h) + dE * np.sin(h), dE * np.cos(h) - dN * np.sin(h)])
+
+
+def body_to_world(body, hdg):
+    F, R = body[:, 0], body[:, 1]
+    return np.column_stack([F * np.sin(hdg) + R * np.cos(hdg), F * np.cos(hdg) - R * np.sin(hdg)])
+
+
+def fit_calibration(flights, estimator):
+    Xs, Ys = [], []
+    for fl in flights:
+        S = load_flight(fl, estimator)
+        Xs.append(design(S)[S["vo_ok"]]); Ys.append(gt_body_steps(S)[S["vo_ok"]])
+    X, Y = np.vstack(Xs), np.vstack(Ys)
+    w = np.ones(len(X))
+    for _ in range(10):                       # Huber IRLS on the joint residual norm
+        sw = np.sqrt(w)[:, None]
+        W, *_ = np.linalg.lstsq(X * sw, Y * sw, rcond=None)
+        r = np.linalg.norm(Y - X @ W, axis=1)
+        k = 1.345 * 1.4826 * np.median(r)
+        w = np.where(r <= k, 1.0, k / np.maximum(r, 1e-9))
+    r = np.linalg.norm(Y - X @ W, axis=1)
+    G = W[:2]
+    hfov = 2 * math.degrees(math.atan(0.5 * math.sqrt(abs(np.linalg.det(G)))))
+    return {"W": W.tolist(), "flights": flights, "n_pairs": int(len(X)),
+            "fit_resid_median_m": float(np.median(r)), "fit_resid_p90_m": float(np.percentile(r, 90)),
+            "implied_hfov_deg": hfov}
+
+
+def predict_steps(S, calib):
+    body = design(S) @ np.array(calib["W"])
+    dt = np.diff(S["t"])
+    ok = S["vo_ok"]
+    sp_ok = np.linalg.norm(body, axis=1) / np.maximum(dt, 1e-3)
+    fallback = float(np.median(sp_ok[ok])) if ok.any() else 20.0
+    speed, last = np.empty(len(body)), []
+    for i in range(len(body)):
+        if ok[i]:
+            last = (last + [sp_ok[i]])[-5:]
+        speed[i] = np.median(last) if last else fallback
+    body = np.where(ok[:, None], body, np.column_stack([speed * dt, np.zeros(len(dt))]))
+    return body_to_world(body, S["hdg"][:-1])
+
+
+def dead_reckon(odo, start=(0.0, 0.0)):
+    return np.vstack([start, np.asarray(start) + np.cumsum(odo, axis=0)])
+
+
+# ---------------------------------------------------------------- fusion
+def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT):
+    n = len(p)
+    o = np.column_stack([ax - p[a_idx, 0], ay - p[a_idx, 1]])
+    est = np.full((n, 2), np.nan)
+    for i in range(n):
+        c = np.where(np.abs(a_idx - i) <= half)[0]
+        if len(c) < min_support:
+            continue
+        d = np.linalg.norm(o[c][:, None] - o[c][None], axis=2)
+        votes = (d <= r_agree).sum(axis=1)
+        b = int(np.argmax(votes))
+        if votes[b] >= min_support:
+            est[i] = p[i] + o[c[d[b] <= r_agree]].mean(axis=0)
+    return est
+
+
+# ---------------------------------------------------------------- evaluation
+def stats(e):
+    e = np.asarray(e)
+    if e.size == 0:
+        return {k: float("nan") for k in ("mean", "median", "p90", "A@20", "A@50", "A@100")}
+    return {"mean": float(e.mean()), "median": float(np.median(e)), "p90": float(np.percentile(e, 90)),
+            "A@20": float(np.mean(e <= 20)), "A@50": float(np.mean(e <= 50)), "A@100": float(np.mean(e <= 100))}
+
+
+def fmt(label, s, extra=""):
+    return (f"  {label:<30} mean {s['mean']:7.0f}  med {s['median']:7.0f}  p90 {s['p90']:7.0f}  "
+            f"A@20 {s['A@20']:5.1%}  A@50 {s['A@50']:5.1%}  A@100 {s['A@100']:5.1%}{extra}")
+
+
+def run_flight(flight, estimator, calib, oracle=False, plot=True):
+    from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
+    S = load_flight(flight, estimator)
+    G = np.column_stack([S["gx"], S["gy"]])
+    odo = predict_steps(S, calib)
+    ok = S["vo_ok"]
+    step_err = np.linalg.norm(odo - np.diff(G, axis=0), axis=1)
+    a_idx, ax, ay = S["a_idx"], S["ax"], S["ay"]
+    raw_err = np.hypot(ax - G[a_idx, 0], ay - G[a_idx, 1])
+
+    fx, fy, _, _ = batch_fuse(S["t"][a_idx].astype(float), ax, ay)
+    loess_err = np.hypot(fx - G[a_idx, 0], fy - G[a_idx, 1])
+
+    p = dead_reckon(odo)                                   # arbitrary origin: no GT
+    est = local_consensus(p, a_idx, ax, ay)
+    cov = ~np.isnan(est[:, 0])
+    cons_err = np.linalg.norm(est[cov] - G[cov], axis=1)
+
+    res = {"flight": flight, "estimator": estimator, "n": len(G), "alt_source": S["alt_source"],
+           "vo_ok_frac": float(ok.mean()),
+           "vo_step_err_median": float(np.median(step_err[ok])) if ok.any() else float("nan"),
+           "anchors_within_150m_frac": float(np.mean(raw_err <= R_AGREE)),
+           "raw": stats(raw_err), "loess": stats(loess_err), "consensus": stats(cons_err),
+           "consensus_coverage": float(cov.mean())}
+    print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}")
+    print(f"  VO ok {res['vo_ok_frac']:.0%} | VO step err median {res['vo_step_err_median']:.1f} m | "
+          f"anchors within 150 m: {res['anchors_within_150m_frac']:.1%}")
+    print(fmt("raw anchors", res["raw"]))
+    print(fmt("Step-1 LOESS (prior best)", res["loess"]))
+    print(fmt("stills-VO + local consensus", res["consensus"], f"  (coverage {cov.mean():.0%})"))
+
+    if oracle:   # anchor-selection floor: only anchors truly within 150 m may vote
+        good = raw_err <= R_AGREE
+        est_o = local_consensus(p, a_idx[good], ax[good], ay[good], min_support=1)
+        cov_o = ~np.isnan(est_o[:, 0])
+        res["oracle"] = stats(np.linalg.norm(est_o[cov_o] - G[cov_o], axis=1))
+        print(fmt("ORACLE anchor selection", res["oracle"], f"  (coverage {cov_o.mean():.0%})"))
+
+    if plot:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+        OUT_DIR.mkdir(parents=True, exist_ok=True)
+        fig, axp = plt.subplots(figsize=(8, 7))
+        axp.plot(G[:, 0], G[:, 1], "-", color="#1f77b4", lw=1.5, label="ground truth")
+        axp.scatter(ax, ay, s=5, color="#bbbbbb", label="raw anchors")
+        axp.plot(est[:, 0], est[:, 1], "-", color="#d62728", lw=1.2, label="stills-VO + local consensus")
+        axp.set_aspect("equal"); axp.legend(fontsize=8); axp.set_xlabel("E (m)"); axp.set_ylabel("N (m)")
+        axp.set_title(f"Flight {flight}: stills-VO + {estimator} anchors")
+        fig.tight_layout(); fig.savefig(OUT_DIR / f"flight{flight}_{estimator}.png", dpi=120); plt.close(fig)
+    return res
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--estimator", default="split_vlad_disk")
+    ap.add_argument("--flights", default=",".join(DEV + VAL),
+                    help="default dev+val; held-out (02,05,06,11) only when passed explicitly")
+    ap.add_argument("--recalibrate", action="store_true")
+    ap.add_argument("--oracle", action="store_true", help="also report the oracle anchor-selection floor")
+    ap.add_argument("--json-out", default=None)
+    a = ap.parse_args()
+    flights = a.flights.split(",")
+    if a.oracle and set(flights) & set(HELD_OUT):
+        sys.exit("--oracle uses ground truth to pick anchors; not allowed on held-out flights")
+
+    if a.recalibrate or not CALIB_PATH.exists():
+        calib = fit_calibration(DEV, a.estimator)
+        json.dump(calib, open(CALIB_PATH, "w"), indent=2)
+    calib = json.load(open(CALIB_PATH))
+    print(f"odometry calibration (fit on {calib['flights']}, {calib['n_pairs']} pairs): residual median "
+          f"{calib['fit_resid_median_m']:.1f} m, p90 {calib['fit_resid_p90_m']:.1f} m, implied HFOV "
+          f"{calib['implied_hfov_deg']:.1f} deg")
+
+    results = [run_flight(fl, a.estimator, calib, oracle=a.oracle) for fl in flights]
+    print(f"\n=== combined over {flights} (mean of per-flight values)")
+    for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):
+        print(fmt(key, {k: float(np.mean([r[key][k] for r in results])) for k in results[0][key]}))
+    if a.json_out:
+        json.dump(results, open(a.json_out, "w"), indent=2)
+
+
+if __name__ == "__main__":
+    main()
