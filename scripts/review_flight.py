@@ -167,6 +167,9 @@ def invariants(flight, gt_path, tel, r, log_text):
             add("ok" if okc else "FAIL",
                 f"query cache: {ev} evicted + {ne} fresh = {ev+ne} beginFrame calls for {nframes} frames; "
                 f"{reused} reused buffer addresses")
+            pw = prof.get("p heading pre-warp applied", (0, 0, 0))[1]
+            add("ok" if pw == nframes else "FAIL",
+                f"heading pre-warp applied on {pw}/{nframes} frames (default-on since 2026-11-18)")
             ft = prof["0 FRAME TOTAL (excl. decode)"][0] / 1000
             mt = prof.get("3b matching, all candidates (wall)", (0, 0, 0))[0] / 1000
             add("info", f"timing: {ft:.2f} s/frame, matching {mt:.2f} s/frame")

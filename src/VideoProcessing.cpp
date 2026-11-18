@@ -423,43 +423,41 @@ void processVideoNavigation(
                 // per-frame heading is available, rotate the crop to
                 // north-up BEFORE handing it to the estimator, so matching
                 // only needs to find a near-identity rotation instead of an
-                // arbitrary one. Sign (+heading via cv::getRotationMatrix2D)
-                // verified empirically against two known-correct UAV-VisLoc
-                // frames -- see CLAUDE.md's Phase 2 Investigation Log.
+                // arbitrary one. The original "+heading verified" sign was
+                // wrong (see the 2026-11-18 note below).
                 bool have_heading = frame_headings_deg &&
                     frame_idx < static_cast<int>(frame_headings_deg->size()) &&
                     std::isfinite((*frame_headings_deg)[frame_idx]);
 
                 bool rotated = false;
                 if (have_heading) {
-                    // Grab a padded (~sqrt(2)x) square ROI around the same
-                    // center so the post-rotation center crop has no blank
-                    // corners -- a plain in-place rotation of the exact
-                    // target crop would introduce black triangular regions
-                    // ORB could latch onto as spurious sharp corners.
-                    int take = legacy_crop_roi.width;
-                    int padded = std::min(static_cast<int>(std::ceil(take * 1.4143)),
-                                           std::min(video_width, video_height));
-                    int ccx = legacy_crop_roi.x + take / 2;
-                    int ccy = legacy_crop_roi.y + take / 2;
-                    cv::Rect padded_roi(ccx - padded / 2, ccy - padded / 2, padded, padded);
-                    padded_roi &= cv::Rect(0, 0, video_width, video_height);
-
-                    if (padded_roi.width == padded && padded_roi.height == padded) {
-                        double heading_deg = (*frame_headings_deg)[frame_idx];
-                        cv::Point2f pcenter(padded_roi.width / 2.0f, padded_roi.height / 2.0f);
-                        cv::Mat rot_matrix = cv::getRotationMatrix2D(pcenter, heading_deg, 1.0);
-                        cv::Mat rotated_padded;
-                        cv::warpAffine(frame(padded_roi), rotated_padded, rot_matrix,
-                                        cv::Size(padded, padded));
-                        cv::Rect center_crop((padded - take) / 2, (padded - take) / 2, take, take);
-                        cv::resize(rotated_padded(center_crop), processed_frame,
-                                   cv::Size(legacy_crop_target_px, legacy_crop_target_px));
-                        rotated = true;
-                    }
-                    // else: padded ROI fell outside the frame (near an edge)
-                    // -- fall through to the unrotated crop below rather than
-                    // skip the frame entirely.
+                    // Rewritten 2026-11-18. (1) SIGN: north-up needs -heading
+                    // (UAV-VisLoc Phi1): angle sweep on flight 01 still 320 gave
+                    // 48 inliers at -Phi1 vs 7 at +Phi1, so the old +heading
+                    // rotated frames AWAY from north-up. (2) GEOMETRY: the old
+                    // version rotated a 1.41x padded square that must fit inside
+                    // the frame; at UAV-VisLoc GSDs the crop is already ~frame
+                    // height, so the padding was clamped and corners went black
+                    // anyway. Warping the FULL frame about the crop centre
+                    // straight into a take x take output uses every real pixel
+                    // the frame has; only the part of the north-up square the
+                    // camera never saw is black.
+                    // Measured motivation: on the fixed-cache runs (01/03/04/08)
+                    // frames within 20 deg of north-up land within 200 m 83% of
+                    // the time, frames rotated >= 70 deg only 7-15%.
+                    const int take = legacy_crop_roi.width;
+                    const double heading_deg = (*frame_headings_deg)[frame_idx];
+                    const cv::Point2f c(legacy_crop_roi.x + take / 2.0f, legacy_crop_roi.y + take / 2.0f);
+                    cv::Mat rot_matrix = cv::getRotationMatrix2D(c, -heading_deg, 1.0);
+                    rot_matrix.at<double>(0, 2) += take / 2.0 - c.x;   // crop centre -> output centre
+                    rot_matrix.at<double>(1, 2) += take / 2.0 - c.y;
+                    cv::Mat rotated_crop;
+                    cv::warpAffine(frame, rotated_crop, rot_matrix, cv::Size(take, take),
+                                   cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+                    cv::resize(rotated_crop, processed_frame,
+                               cv::Size(legacy_crop_target_px, legacy_crop_target_px));
+                    rotated = true;
+                    if (StageProfiler::enabled()) StageProfiler::add("p heading pre-warp applied", 0.0);
                 }
                 if (!rotated) {
                     cv::resize(frame(legacy_crop_roi), processed_frame,

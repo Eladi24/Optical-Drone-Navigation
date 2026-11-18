@@ -1089,13 +1089,15 @@ int main(int argc, char **argv)
                 cfg.sample_name.find(sample_filter_arg) == std::string::npos)
                 continue;
 
-            // STRATEGY.md Phase 2 telemetry-as-prior pre-warp: opt-in via env
-            // var (not a CLI flag -- this is a single-variable A/B experiment,
-            // not a permanent user-facing option yet) so the default `d`
-            // pipeline invocation stays byte-for-byte reproducible with every
-            // already-recorded gate result. See CLAUDE.md's Phase 2
-            // Investigation Log for the measured delta.
-            bool use_heading_prewarp = std::getenv("DRONENAV_HEADING_PREWARP") != nullptr;
+            // Compass-heading pre-warp (frame rotated north-up by -heading before
+            // matching): DEFAULT ON since 2026-11-18. DISK+LightGlue are not
+            // rotation-invariant, and every UAV-VisLoc flight is a two-direction
+            // lawnmower survey: on the fixed-cache runs, frames within 20 deg of
+            // north-up landed within 200 m 83% of the time vs 7-15% at >= 70 deg;
+            // flight 01's 170-deg leg went 5/30 -> 18/30 within 200 m with it.
+            // DRONENAV_NO_HEADING_PREWARP=1 restores the old unrotated behaviour
+            // for A/B comparisons. (The compass is a standard non-GNSS sensor.)
+            bool use_heading_prewarp = std::getenv("DRONENAV_NO_HEADING_PREWARP") == nullptr;
             runDatasetPipelineForSample(cfg, algorithm, use_heading_prewarp);
         }
 
