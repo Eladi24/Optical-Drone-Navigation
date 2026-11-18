@@ -39,7 +39,7 @@ InitializationData readGroundTruthStart(const std::string& sample_name);
 
 // ---------------------------------------------------------------------------
 // Reads "CSV Files/ground_truth_<sample_name>.csv" into a vector indexed by
-// (Frame - 1), i.e. by the 0-based frame index processVideoNavigation()'s
+// Frame, i.e. by the 0-based frame index processVideoNavigation()'s
 // frame_idx uses -- same indexing convention as
 // TelemetryImporter::loadTelemetryFrameTimes(). Frames with no ground-truth
 // row are left as {0.0, 0.0}, matching the sentinel already used for

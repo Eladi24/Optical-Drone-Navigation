@@ -1,3 +1,4 @@
+#include <cctype>
 #include "TelemetryImporter.hpp"
 
 #include <ctime>
@@ -14,6 +15,7 @@ namespace {
 
 struct Row {
     int    num;
+    int    video_idx;  // 0-based index in the assembled video = filename number - 1
     std::string filename;
     double time_sec;   // relative to the first row, filled in after parsing
     double lat, lon, height, phi1;
@@ -28,6 +30,19 @@ double parseIsoTimestamp(const std::string& iso) {
     ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
     if (ss.fail()) return -1.0;
     return static_cast<double>(timegm(&tm));
+}
+
+// "08_0221.JPG" -> 220. DatasetVideoAssembler stitches <prefix>%04d.JPG for i = 1..frame_count,
+// so the FILENAME number, not the CSV's `num`, is what fixes a still's video index. They differ
+// on flight 08: `num` jumps 220 -> 261 while filenames and positions run on unbroken.
+// Returns -1 if the filename has no trailing number.
+int videoIndexFromFilename(const std::string& filename) {
+    size_t dot = filename.find_last_of('.');
+    size_t end = (dot == std::string::npos) ? filename.size() : dot;
+    size_t start = end;
+    while (start > 0 && std::isdigit(static_cast<unsigned char>(filename[start - 1]))) --start;
+    if (start == end) return -1;
+    return std::stoi(filename.substr(start, end - start)) - 1;
 }
 
 std::vector<std::string> splitCsvLine(const std::string& line) {
@@ -61,6 +76,8 @@ TelemetryImportResult importUavVisLocTelemetry(const std::string& csv_path,
         Row row;
         row.num      = std::stoi(f[0]);
         row.filename = f[1];
+        row.video_idx = videoIndexFromFilename(row.filename);
+        if (row.video_idx < 0) row.video_idx = row.num - 1;
         double abs_time = parseIsoTimestamp(f[2]);
         row.lat    = std::stod(f[3]);
         row.lon    = std::stod(f[4]);
@@ -90,16 +107,20 @@ TelemetryImportResult importUavVisLocTelemetry(const std::string& csv_path,
     // Default stream precision is 6 SIGNIFICANT digits -- that truncated lng 115.9747973 to
     // 115.975 (~48 m at 30N) and cost 15-26 m mean / 50 m max of ground-truth error.
     gt << std::setprecision(12);
+    // Frame = 0-based video index (filename number - 1), the same index VideoProcessing's frame_idx
+    // and the video_telemetry CSV use. Until 2026-11-17 it was the 1-based `num`: every Python-side
+    // comparison was one still (~80 m) off, and on flight 08 (num gap 220->261) frames >= 220 were
+    // compared against a position 40 stills (~4 km) earlier, in C++ and Python alike.
     gt << "Frame,Time_Sec,Lat,Lng,Label\n";
     for (auto& r : rows)
-        gt << r.num << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.filename << "\n";
+        gt << r.video_idx << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.filename << "\n";
 
     std::string telem_path = "CSV Files/telemetry_" + sample_name + ".csv";
     std::ofstream telem(telem_path);
     telem << std::setprecision(12);
     telem << "Frame,Time_Sec,Lat,Lng,Alt,Heading\n";
     for (auto& r : rows)
-        telem << r.num << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.height << "," << r.phi1 << "\n";
+        telem << r.video_idx << "," << r.time_sec << "," << r.lat << "," << r.lon << "," << r.height << "," << r.phi1 << "\n";
 
     std::cout << "importUavVisLocTelemetry: wrote " << rows.size() << " rows -> "
               << gt_path << " and " << telem_path
@@ -123,7 +144,7 @@ std::vector<double> loadTelemetryFrameTimes(const std::string& sample_name) {
         if (f.size() < 2) continue;
         int frame = std::stoi(f[0]);
         double time_sec = std::stod(f[1]);
-        int idx = frame - 1;   // Frame is 1-based; frame_times_sec is 0-based
+        int idx = frame;       // Frame is the 0-based video index
         if (idx < 0) continue;
         if (static_cast<int>(times.size()) <= idx) times.resize(idx + 1, 0.0);
         times[idx] = time_sec;
@@ -146,7 +167,7 @@ std::vector<double> loadTelemetryHeadings(const std::string& sample_name) {
         if (f.size() < 6) continue;
         int frame = std::stoi(f[0]);
         double heading_deg = std::stod(f[5]);
-        int idx = frame - 1;   // Frame is 1-based; frame_headings_deg is 0-based
+        int idx = frame;       // Frame is the 0-based video index
         if (idx < 0) continue;
         if (static_cast<int>(headings.size()) <= idx)
             headings.resize(idx + 1, std::numeric_limits<double>::quiet_NaN());

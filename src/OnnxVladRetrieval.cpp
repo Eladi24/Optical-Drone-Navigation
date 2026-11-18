@@ -1,3 +1,4 @@
+#include "StageProfiler.hpp"
 #include "OnnxVladRetrieval.hpp"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
@@ -160,8 +161,10 @@ std::vector<int> OnnxVladRetrieval::retrieve(const cv::Mat& frame, int k)
 {
     if (frame.empty() || crop_vlad_.empty()) return {};
 
-    auto frame_descs = embedDense(frame, feature_mask_);
+    std::vector<std::vector<float>> frame_descs;
+    { StageProfiler::ScopedStage s("3a1 retrieval: DINOv2 embed frame"); frame_descs = embedDense(frame, feature_mask_); }
     if (frame_descs.empty()) return {};
+    StageProfiler::ScopedStage s_scan("3a2 retrieval: VLAD encode + scan");
     std::vector<float> q = vladEncode(frame_descs);
 
     std::vector<std::pair<double, int>> scored;

@@ -33,6 +33,7 @@ public:
 
     void setFeatureMask(const cv::Mat& mask) override { feature_mask_ = mask; }
     MatchResult match(const cv::Mat& frame, const ReferenceCrop& crop) override;
+    void beginFrame(const cv::Mat& frame) override;  // evicts a stale query entry (see IMatchingStage)
 
 private:
     struct ExtractedFeatures {

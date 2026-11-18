@@ -223,3 +223,8 @@ MatchResult DinoDenseMatching::match(const cv::Mat& frame, const ReferenceCrop& 
     result.inliers = inliers;
     return result;
 }
+
+void DinoDenseMatching::beginFrame(const cv::Mat& frame)
+{
+    feature_cache_.erase(frame.data);   // single-threaded matcher: no lock needed
+}

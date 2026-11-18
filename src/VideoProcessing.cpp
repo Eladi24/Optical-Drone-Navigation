@@ -1,3 +1,6 @@
+#include "StageProfiler.hpp"
+#include <cstdlib>
+#include <chrono>
 #include "VideoProcessing.hpp"
 #include "CoordinateUtils.hpp"
 #include "Visualization.hpp"
@@ -370,7 +373,15 @@ void processVideoNavigation(
     double last_real_time_sec = 0.0;
     bool   have_last_real_time = false;
 
-    while (video.read(frame)) {
+    // Profiling (DRONENAV_PROFILE, see StageProfiler.hpp): optional frame cap for short runs.
+    if (StageProfiler::enabled()) {
+        if (const char* mf = std::getenv("DRONENAV_MAX_FRAMES")) max_frames_to_process = std::atoi(mf);
+    }
+    auto t_frame0 = std::chrono::steady_clock::now();
+    while (true) {
+        bool got_frame;
+        { StageProfiler::ScopedStage s("1 video decode (incl. skipped)"); got_frame = video.read(frame); }
+        if (!got_frame) break;
 
         if (frame_idx < start_frame_idx)      { ++frame_idx; continue; }
         if (frame_idx % frame_skip != 0)      { ++frame_idx; continue; }
@@ -390,7 +401,9 @@ void processVideoNavigation(
             dt       = frame_skip / fps;
         }
 
+        t_frame0 = std::chrono::steady_clock::now();
         // --- Pre-process frame ---
+        auto t_pre0 = std::chrono::steady_clock::now();
         cv::Mat processed_frame;
 
         if (use_optical_flow) {
@@ -482,6 +495,8 @@ void processVideoNavigation(
         // too noisy on the weak, low-inlier matches that make up most
         // frames to be a useful tiebreaker).
 
+        if (StageProfiler::enabled()) StageProfiler::add("2 preprocess + crop", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_pre0).count());
+        auto t_est0 = std::chrono::steady_clock::now();
         PositionEstimate estimate;
         if (use_optical_flow) {
             // Pass the full preprocessed frame — OpticalFlowTracker handles its own
@@ -506,6 +521,8 @@ void processVideoNavigation(
                 processed_frame, reference_crops, last_position);
         }
 
+        if (StageProfiler::enabled()) StageProfiler::add("3 estimatePosition (total)", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_est0).count());
+        auto t_rest0 = std::chrono::steady_clock::now();
         std::pair<double, double> raw_position  = estimate.position;
         double                    confidence     = estimate.confidence;
         int                       best_match_idx = estimate.best_match_idx;
@@ -877,6 +894,8 @@ void processVideoNavigation(
             cv::hconcat(std::vector<cv::Mat>{sidebar, display_map}, display_map);
         }
 
+        if (StageProfiler::enabled()) StageProfiler::add("4 kalman + recall + csv + drawing", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_rest0).count());
+        auto t_show0 = std::chrono::steady_clock::now();
         cv::imshow("Video Navigation", display_map);
         // Always show the original colour frame — processed_frame is internal only
         cv::imshow("Video Frame", frame);
@@ -894,13 +913,17 @@ void processVideoNavigation(
                       << "  innov=" << std::setprecision(1) << innovation << "m"
                       << "  consec_reject=" << consecutive_rejections << std::endl;
 
-        int key = cv::waitKey(1);
+        if (StageProfiler::enabled()) StageProfiler::add("5 imshow + video write + log", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_show0).count());
+        int key;
+        { StageProfiler::ScopedStage s("6 waitKey(1)"); key = cv::waitKey(1); }
         if (key == 'q' || key == 27) { std::cout << "Cancelled.\n"; break; }
         if (key == ' ')              { std::cout << "Paused.\n"; cv::waitKey(0); }
 
+        if (StageProfiler::enabled()) StageProfiler::add("0 FRAME TOTAL (excl. decode)", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_frame0).count());
         ++frame_idx;
         ++processed_frames;
     }
+    StageProfiler::report(processed_frames, "processVideoNavigation");
 
     // =========================================================================
     // CLEANUP & SUMMARY

@@ -1,3 +1,4 @@
+#include "StageProfiler.hpp"
 #include "DiskLightGlueMatching.hpp"
 #include <opencv2/calib3d.hpp>
 #include <opencv2/imgproc.hpp>
@@ -90,6 +91,7 @@ DiskLightGlueMatching::ExtractedFeatures DiskLightGlueMatching::extract(const cv
 
     const char* input_names[]  = {"image"};
     const char* output_names[] = {"keypoints", "scores", "descriptors"};
+    StageProfiler::ScopedStage s_disk("m1 DISK extract (summed over threads)");
     auto outputs = extractor_session_.Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1,
                                            output_names, 3);
 
@@ -181,6 +183,12 @@ MatchResult DiskLightGlueMatching::match(const cv::Mat& frame, const ReferenceCr
     MatchResult result;
     if (frame.empty() || crop.image.empty()) return result;
 
+    if (StageProfiler::enabled()) {
+        pthread_rwlock_rdlock(&cache_rwlock_);
+        const bool hit = feature_cache_.count(frame.data) > 0;
+        pthread_rwlock_unlock(&cache_rwlock_);
+        StageProfiler::add(hit ? "q query features: cache HIT" : "q query features: cache miss", 0.0);
+    }
     const ExtractedFeatures* qf = getCachedFeatures(frame, feature_mask_);
     if (!qf) return result;
 
@@ -222,6 +230,7 @@ MatchResult DiskLightGlueMatching::match(const cv::Mat& frame, const ReferenceCr
 
     std::vector<cv::Point2f> src_pts, dst_pts;
     try {
+        StageProfiler::ScopedStage s_lg("m2 LightGlue (summed over threads)");
         auto outputs = lightglue_session_.Run(Ort::RunOptions{nullptr}, input_names, inputs.data(),
                                                inputs.size(), output_names, 4);
         // matches0[i] is the index into image1's (crop's) keypoints, or -1 if unmatched --
@@ -244,6 +253,7 @@ MatchResult DiskLightGlueMatching::match(const cv::Mat& frame, const ReferenceCr
     if (static_cast<int>(src_pts.size()) < 8) return result;
 
     cv::Mat mask;
+    StageProfiler::ScopedStage s_ransac("m3 RANSAC homography (summed)");
     cv::Mat H = cv::findHomography(src_pts, dst_pts, cv::RANSAC, 5.0, mask);
     if (H.empty()) return result;
 
@@ -253,4 +263,19 @@ MatchResult DiskLightGlueMatching::match(const cv::Mat& frame, const ReferenceCr
     result.homography = H;
     result.inliers = inliers;
     return result;
+}
+
+void DiskLightGlueMatching::beginFrame(const cv::Mat& frame)
+{
+    pthread_rwlock_wrlock(&cache_rwlock_);
+    const size_t evicted = feature_cache_.erase(frame.data);
+    pthread_rwlock_unlock(&cache_rwlock_);
+    // Invariant check for the 2026-11-17 stale-cache bug: with the buffer address reused, nearly
+    // every frame should evict the previous frame's entry here, then extract its own features once.
+    if (StageProfiler::enabled())
+        StageProfiler::add(evicted ? "q beginFrame: stale entry evicted" : "q beginFrame: nothing to evict", 0.0);
+    // Extract the query once, here, single-threaded: otherwise the ~10 concurrent candidate
+    // tasks all miss together and each re-extracts the same frame (measured: 4 extractions per
+    // frame, matching wall time 2.7 -> 6.0 s).
+    if (!frame.empty()) getCachedFeatures(frame, feature_mask_);
 }

@@ -348,10 +348,15 @@ std::vector<std::pair<double, double>> loadGroundTruthPath(const std::string& sa
         max_frame = std::max(max_frame, frame);
     }
 
-    std::vector<std::pair<double, double>> path_by_frame(max_frame, {0.0, 0.0});
+    // Frame is the 0-based video index for both sources (Haifa annotator, and UAV-VisLoc since
+    // 2026-11-17). The old (Frame - 1) indexing was right for the then-1-based UAV-VisLoc GT and
+    // one frame off for Haifa.
+    if (rows.empty())
+        return {};
+    std::vector<std::pair<double, double>> path_by_frame(max_frame + 1, {0.0, 0.0});
     for (const auto& [frame, coords] : rows) {
-        if (frame >= 1 && frame <= max_frame)
-            path_by_frame[frame - 1] = coords;
+        if (frame >= 0 && frame <= max_frame)
+            path_by_frame[frame] = coords;
     }
     return path_by_frame;
 }

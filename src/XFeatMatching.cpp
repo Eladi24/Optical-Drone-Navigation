@@ -196,3 +196,8 @@ MatchResult XFeatMatching::match(const cv::Mat& frame, const ReferenceCrop& crop
     result.inliers = inliers;
     return result;
 }
+
+void XFeatMatching::beginFrame(const cv::Mat& frame)
+{
+    feature_cache_.erase(frame.data);   // single-threaded matcher: no lock needed
+}

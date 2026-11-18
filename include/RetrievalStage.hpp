@@ -51,4 +51,14 @@ public:
     // without exploiting the real per-frame candidate-level parallelism -- see CLAUDE.md's
     // DISK+LightGlue Investigation Log).
     virtual bool isThreadSafe() const { return false; }
+
+    // Called once per frame, before any match() for that frame (single-threaded). Matchers that
+    // cache the QUERY frame's features keyed by cv::Mat::data MUST drop any entry at
+    // frame.data here: the per-frame buffer is freed and re-allocated every frame and glibc
+    // routinely hands back the same address, so without this, frame N silently reuses frame
+    // N-1's (in practice frame 0's) features. Measured 2026-11-17: 146/150 query lookups over 15
+    // frames were cache hits, i.e. every DISK+LightGlue / XFeat / dense-DINOv2 split_* run before
+    // that date matched candidates against the FIRST frame of the flight. Reference crops live
+    // for the whole run, so a live crop can never share the new frame's address.
+    virtual void beginFrame(const cv::Mat& /*frame*/) {}
 };

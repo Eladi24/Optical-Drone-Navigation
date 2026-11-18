@@ -16,8 +16,10 @@
 //   "CSV Files/ground_truth_<sample_name>.csv"  (Frame,Time_Sec,Lat,Lng,Label)
 //     -- same schema Haifa's manual annotator produces, so readGroundTruthStart()
 //        and scripts/evaluate_ground_truth.py work completely unchanged. Frame is
-//        the CSV's own 1-based "num" column, matching the frame index the
-//        DatasetVideoAssembler's synthetic video uses for the same image.
+//        the 0-based video index (the image FILENAME's number minus 1 -- NOT the CSV's
+//        "num", which skips 221-260 on flight 08) -- the same index
+//        the assembled video, VideoProcessing's frame_idx and video_telemetry CSVs use
+//        (Haifa's annotator is 0-based too). Label holds the image filename.
 //   "CSV Files/telemetry_<sample_name>.csv"     (Frame,Time_Sec,Lat,Lng,Alt,Heading)
 //     -- denser per-frame companion (every row, not just a "Label"-worthy subset;
 //        UAV-VisLoc already has one row per image so in practice this has the
@@ -46,7 +48,7 @@ TelemetryImportResult importUavVisLocTelemetry(const std::string& csv_path,
                                                 const std::string& sample_name);
 
 // Reads back "CSV Files/telemetry_<sample_name>.csv" (written by
-// importUavVisLocTelemetry above) into a vector indexed by (Frame - 1), i.e.
+// importUavVisLocTelemetry above) into a vector indexed by Frame, i.e.
 // by the 0-based frame index the assembled video's frame_idx uses. Pass the
 // result to processVideoNavigation()'s frame_times_sec parameter. Returns an
 // empty vector if the file doesn't exist or has no rows.

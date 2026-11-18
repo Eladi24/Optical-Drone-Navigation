@@ -40,6 +40,7 @@ public:
 
     void setFeatureMask(const cv::Mat& mask) override { feature_mask_ = mask; }
     MatchResult match(const cv::Mat& frame, const ReferenceCrop& crop) override;
+    void beginFrame(const cv::Mat& frame) override;  // evicts a stale query entry (see IMatchingStage)
 
     // match() is safe to call concurrently on this instance -- feature_cache_ is protected by
     // cache_rwlock_ (same double-checked-locking pattern as ORBFeatureEstimator's own

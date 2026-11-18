@@ -13,7 +13,8 @@ Inputs per flight:
     evaluation and the one-off dev-flight calibration fit -- plus the GNSS-free sensors a
     real platform has: altitude, IMU attitude Omega/Kappa, compass heading Phi1, time)
   - CSV Files/video_telemetry_<est>_uavvisloc_uavvisloc_<f>.csv  (per-frame retrieval
-    anchors; its Frame column is the 0-based video index, i.e. still num = Frame + 1)
+    anchors; its Frame column is the 0-based video index = image filename number - 1; NOT num - 1,
+    which differs on flight 08)
 
 Sensors assumed (standard GNSS-denied suite): camera, altimeter (AGL), IMU attitude, compass.
 
@@ -94,6 +95,9 @@ def load_flight(flight, estimator):
     t = [datetime.fromisoformat(r["date"]) for r in rows]
     S["t"] = np.array([(x - t[0]).total_seconds() for x in t])
     num_to_idx = {v: i for i, v in enumerate(S["num"])}
+    # Video Frame -> row: the assembled video follows the FILENAME number (Frame = filename
+    # number - 1), not `num` -- they differ on flight 08 (num jumps 220 -> 261).
+    vid_to_idx = {int(r["filename"].rsplit("_", 1)[1].split(".")[0]) - 1: i for i, r in enumerate(rows)}
 
     agl_path = CSV_DIR / f"agl_uavvisloc_{flight}.csv"
     if agl_path.exists():
@@ -125,10 +129,10 @@ def load_flight(flight, estimator):
         for r in csv.DictReader(f):
             if r.get("Measurement_Valid", "1") not in ("1", "true", "True"):
                 continue
-            num = int(r["Frame"]) + 1
-            if num not in num_to_idx:
+            vid = int(r["Frame"])
+            if vid not in vid_to_idx:
                 continue
-            a_idx.append(num_to_idx[num])
+            a_idx.append(vid_to_idx[vid])
             ax.append((float(r["Raw_Lng"]) - lng0) * ml)
             ay.append((float(r["Raw_Lat"]) - lat0) * M_LAT)
     S["a_idx"], S["ax"], S["ay"] = np.array(a_idx, int), np.array(ax), np.array(ay)

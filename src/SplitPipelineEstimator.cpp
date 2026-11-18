@@ -1,3 +1,6 @@
+#include "StageProfiler.hpp"
+#include <chrono>
+#include <set>
 #include "SplitPipelineEstimator.hpp"
 #include "CoordinateUtils.hpp"
 #include "SyncBarrier.hpp"
@@ -74,7 +77,21 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
         return result;
     }
 
-    std::vector<int> candidate_indices = retrieval_->retrieve(drone_view, top_k_);
+    if (StageProfiler::enabled()) {
+        // Query-frame buffer-address reuse check: the DISK/XFeat feature caches are keyed by
+        // cv::Mat::data and never evicted, so a frame reusing a previous frame's address would
+        // silently get that frame's features (2026-11-17 hypothesis).
+        static std::set<const uchar*> seen;
+        const bool is_new = seen.insert(drone_view.data).second;
+        StageProfiler::add(is_new ? "z query buffer address: new" : "z query buffer address: REUSED", 0.0);
+    }
+    // Drop any stale query-feature cache entry at this frame's buffer address (see
+    // IMatchingStage::beginFrame) BEFORE retrieval/matching touch the frame.
+    matching_->beginFrame(drone_view);
+    if (refiner_) refiner_->beginFrame(drone_view);
+
+    std::vector<int> candidate_indices;
+    { StageProfiler::ScopedStage s("3a retrieval (total)"); candidate_indices = retrieval_->retrieve(drone_view, top_k_); }
     if (candidate_indices.empty()) {
         PositionEstimate result(last_position, 0.3, -1);
         result.measurement_valid = false;
@@ -103,6 +120,7 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
         }
     };
 
+    auto t_match0 = std::chrono::steady_clock::now();
     if (matching_->isThreadSafe()) {
         // Run match() for every retrieved candidate concurrently -- see
         // DiskLightGlueMatching::isThreadSafe()'s own comment for why this exists (CPU-only
@@ -138,6 +156,10 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
             consider(idx, matching_->match(drone_view, reference_crops[idx]));
         }
     }
+
+    if (StageProfiler::enabled())
+        StageProfiler::add("3b matching, all candidates (wall)",
+            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_match0).count());
 
     // No candidate produced a geometrically consistent homography -- no real
     // measurement this frame. Same honest-reporting contract as

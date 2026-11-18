@@ -84,8 +84,8 @@ def audit_flight(flight, n_frames=6):
     panels, scores = [], []
     for idx in candidate_idxs:
         row = gt[idx]
-        frame = int(row["Frame"])
-        drone_path = drone_dir / f"{flight}_{frame:04d}.JPG"
+        frame = int(row["Frame"])  # 0-based video index; the filename is in Label
+        drone_path = drone_dir / row["Label"]
         if not drone_path.exists():
             continue
         lat, lng = float(row["Lat"]), float(row["Lng"])
