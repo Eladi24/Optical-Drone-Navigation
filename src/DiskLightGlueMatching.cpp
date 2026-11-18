@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdlib>
 
 namespace {
 // Must match scripts/export_disk_lightglue.py's INPUT_SIZE/MAX_KEYPOINTS exactly.
@@ -16,6 +17,7 @@ constexpr int kDescDim     = 128;
 // NMS-based, threshold-0.0 keypoint distribution (same caveat XFeatMatching/AKAZEFeatureEstimator
 // already document for their own inherited use of this constant).
 constexpr size_t kMinValidKeypoints = 150;
+constexpr int kDefaultQueryThreads = 4;
 
 // CPU-only LightGlue inference (9-layer self+cross-attention over up to 1024 keypoints) is slow
 // enough per candidate that a full multi-flight gate was impractical either way this was tried:
@@ -30,11 +32,20 @@ constexpr size_t kMinValidKeypoints = 150;
 // SplitPipelineEstimator.cpp's threaded candidate loop, which exploits the real per-frame
 // independent work (up to top_k candidates) across multiple CPU cores rather than trying to
 // parallelize inside one already-small transformer forward pass.
-Ort::SessionOptions makeSessionOptions()
+Ort::SessionOptions makeSessionOptions(int intra_op_threads = 1)
 {
     Ort::SessionOptions opts;
-    opts.SetIntraOpNumThreads(1);
+    opts.SetIntraOpNumThreads(intra_op_threads);
     return opts;
+}
+
+// See query_extractor_session_ in the header. DISK is a conv U-Net (unlike LightGlue's small
+// sequential attention ops, where more intra-op threads measured slower), and nothing else runs
+// while the query is extracted.
+int queryThreads()
+{
+    if (const char* v = std::getenv("DRONENAV_QUERY_THREADS")) return std::max(1, std::atoi(v));
+    return kDefaultQueryThreads;
 }
 }  // namespace
 
@@ -42,6 +53,7 @@ DiskLightGlueMatching::DiskLightGlueMatching(const std::string& extractor_path,
                                               const std::string& lightglue_path)
     : env_(ORT_LOGGING_LEVEL_WARNING, "DiskLightGlueMatching")
     , extractor_session_(env_, extractor_path.c_str(), makeSessionOptions())
+    , query_extractor_session_(env_, extractor_path.c_str(), makeSessionOptions(queryThreads()))
     , lightglue_session_(env_, lightglue_path.c_str(), makeSessionOptions())
     , mem_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault))
 {
@@ -54,7 +66,8 @@ DiskLightGlueMatching::~DiskLightGlueMatching()
 }
 
 DiskLightGlueMatching::ExtractedFeatures DiskLightGlueMatching::extract(const cv::Mat& image,
-                                                                          const cv::Mat& mask)
+                                                                          const cv::Mat& mask,
+                                                                          Ort::Session* session)
 {
     ExtractedFeatures result;
     if (image.empty()) return result;
@@ -92,7 +105,8 @@ DiskLightGlueMatching::ExtractedFeatures DiskLightGlueMatching::extract(const cv
     const char* input_names[]  = {"image"};
     const char* output_names[] = {"keypoints", "scores", "descriptors"};
     StageProfiler::ScopedStage s_disk("m1 DISK extract (summed over threads)");
-    auto outputs = extractor_session_.Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1,
+    Ort::Session& sess = session ? *session : extractor_session_;
+    auto outputs = sess.Run(Ort::RunOptions{nullptr}, input_names, &input_tensor, 1,
                                            output_names, 3);
 
     // keypoints is int64 (DISK's own NMS selects them via nonzero(), which is naturally
@@ -146,7 +160,7 @@ DiskLightGlueMatching::ExtractedFeatures DiskLightGlueMatching::extract(const cv
 }
 
 const DiskLightGlueMatching::ExtractedFeatures* DiskLightGlueMatching::getCachedFeatures(
-    const cv::Mat& image, const cv::Mat& mask)
+    const cv::Mat& image, const cv::Mat& mask, Ort::Session* session)
 {
     const uchar* key = image.data;
 
@@ -161,7 +175,7 @@ const DiskLightGlueMatching::ExtractedFeatures* DiskLightGlueMatching::getCached
     pthread_rwlock_unlock(&cache_rwlock_);
 
     // --- Slow path: run the (unlocked) extraction, then take the exclusive write lock. ---
-    ExtractedFeatures entry = extract(image, mask);
+    ExtractedFeatures entry = extract(image, mask, session);
 
     pthread_rwlock_wrlock(&cache_rwlock_);
     // Double-check: another thread may have computed and inserted this same key while this
@@ -277,5 +291,8 @@ void DiskLightGlueMatching::beginFrame(const cv::Mat& frame)
     // Extract the query once, here, single-threaded: otherwise the ~10 concurrent candidate
     // tasks all miss together and each re-extracts the same frame (measured: 4 extractions per
     // frame, matching wall time 2.7 -> 6.0 s).
-    if (!frame.empty()) getCachedFeatures(frame, feature_mask_);
+    if (!frame.empty()) {
+        StageProfiler::ScopedStage s_q("q query DISK extract in beginFrame (wall)");
+        getCachedFeatures(frame, feature_mask_, &query_extractor_session_);
+    }
 }

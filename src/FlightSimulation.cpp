@@ -13,6 +13,7 @@
 #include <sstream>
 #include <memory>
 #include "FlightSimulation.hpp"
+#include "VideoProcessing.hpp"
 #include "ORBFeatureEstimator.hpp"
 #include "SIFTFeatureEstimator.hpp"
 #include "HybridEstimator.hpp"
@@ -290,8 +291,9 @@ void matchCropsOnMap(
         cv::imshow("Crop Templates", grid);
     }
 
-    std::cout << "Press any key to close windows..." << std::endl;
-    cv::waitKey(0);
+    std::cout << "Press any key to close windows (closes automatically in "
+              << kEndOfRunWindowTimeoutMs / 1000 << " s)..." << std::endl;
+    cv::waitKey(kEndOfRunWindowTimeoutMs);
     cv::destroyAllWindows();
 }
 
@@ -947,7 +949,8 @@ void runDroneSimulation(
 
     telemetry_file.close();
     std::cout << "✓ Telemetry data saved to: " << telemetry_filename << std::endl;
-    std::cout << "\nSimulation completed. Press any key to continue..." << std::endl;
-    cv::waitKey(0);
+    std::cout << "\nSimulation completed. Press any key to continue (continues automatically in "
+              << kEndOfRunWindowTimeoutMs / 1000 << " s)..." << std::endl;
+    cv::waitKey(kEndOfRunWindowTimeoutMs);
     cv::destroyAllWindows();
 }

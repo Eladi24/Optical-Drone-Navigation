@@ -123,7 +123,7 @@ def load_flight(flight, estimator):
                 vo_d[i] = float(r["Disp_X_Px"]), float(r["Disp_Y_Px"])
     S["vo_ok"], S["vo_d"] = vo_ok, vo_d
 
-    a_idx, ax, ay = [], [], []
+    a_idx, ax, ay, ainl = [], [], [], []
     tel = CSV_DIR / f"video_telemetry_{estimator}_uavvisloc_uavvisloc_{flight}.csv"
     with open(tel, newline="") as f:
         for r in csv.DictReader(f):
@@ -135,7 +135,9 @@ def load_flight(flight, estimator):
             a_idx.append(vid_to_idx[vid])
             ax.append((float(r["Raw_Lng"]) - lng0) * ml)
             ay.append((float(r["Raw_Lat"]) - lat0) * M_LAT)
+            ainl.append(int(r["Inliers"]) if r.get("Inliers") else 0)
     S["a_idx"], S["ax"], S["ay"] = np.array(a_idx, int), np.array(ax), np.array(ay)
+    S["a_inl"] = np.array(ainl, int)
     return S
 
 
@@ -230,21 +232,44 @@ def fmt(label, s, extra=""):
             f"A@20 {s['A@20']:5.1%}  A@50 {s['A@50']:5.1%}  A@100 {s['A@100']:5.1%}{extra}")
 
 
-def run_flight(flight, estimator, calib, oracle=False, plot=True):
+def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r):
+    """Consensus as a GATE, not an estimator (2026-11-18): where a still's own anchor lies within
+    gate_r of the consensus prediction, keep that anchor (correct picks are ~26 m precise, while
+    the consensus mean carries odometry drift across the window); else use the consensus. Stills
+    with no estimate are filled by dead-reckoning from the nearest covered still (no GT used)."""
+    A = np.full((n, 2), np.nan)
+    A[a_idx] = np.column_stack([ax, ay])
+    agree = np.linalg.norm(A - est, axis=1) <= gate_r          # NaN compares False
+    out = np.where(agree[:, None], A, est)
+    cov = np.where(~np.isnan(out[:, 0]))[0]
+    if cov.size:
+        for i in np.where(np.isnan(out[:, 0]))[0]:
+            j = cov[np.argmin(np.abs(cov - i))]
+            out[i] = out[j] + (p[i] - p[j])
+    return out
+
+
+def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
+               half=HALF_WIN, gate_r=0.0):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
     odo = predict_steps(S, calib)
     ok = S["vo_ok"]
     step_err = np.linalg.norm(odo - np.diff(G, axis=0), axis=1)
-    a_idx, ax, ay = S["a_idx"], S["ax"], S["ay"]
+    # Optional inlier gate (2026-11-18): after the stale query-cache fix, inlier counts separate
+    # correct picks from wrong ones (flight 01 AUC 0.80), so low-inlier anchors can be dropped.
+    keep = S["a_inl"] >= min_inliers
+    a_idx, ax, ay = S["a_idx"][keep], S["ax"][keep], S["ay"][keep]
     raw_err = np.hypot(ax - G[a_idx, 0], ay - G[a_idx, 1])
 
     fx, fy, _, _ = batch_fuse(S["t"][a_idx].astype(float), ax, ay)
     loess_err = np.hypot(fx - G[a_idx, 0], fy - G[a_idx, 1])
 
     p = dead_reckon(odo)                                   # arbitrary origin: no GT
-    est = local_consensus(p, a_idx, ax, ay)
+    est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree)
+    if gate_r > 0:
+        est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r)
     cov = ~np.isnan(est[:, 0])
     cons_err = np.linalg.norm(est[cov] - G[cov], axis=1)
 
@@ -254,7 +279,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True):
            "anchors_within_150m_frac": float(np.mean(raw_err <= R_AGREE)),
            "raw": stats(raw_err), "loess": stats(loess_err), "consensus": stats(cons_err),
            "consensus_coverage": float(cov.mean())}
-    print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}")
+    print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}  "
+          f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, half {half}, gate_r {gate_r:.0f}]")
     print(f"  VO ok {res['vo_ok_frac']:.0%} | VO step err median {res['vo_step_err_median']:.1f} m | "
           f"anchors within 150 m: {res['anchors_within_150m_frac']:.1%}")
     print(fmt("raw anchors", res["raw"]))
@@ -263,7 +289,7 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True):
 
     if oracle:   # anchor-selection floor: only anchors truly within 150 m may vote
         good = raw_err <= R_AGREE
-        est_o = local_consensus(p, a_idx[good], ax[good], ay[good], min_support=1)
+        est_o = local_consensus(p, a_idx[good], ax[good], ay[good], r_agree=r_agree, min_support=1)
         cov_o = ~np.isnan(est_o[:, 0])
         res["oracle"] = stats(np.linalg.norm(est_o[cov_o] - G[cov_o], axis=1))
         print(fmt("ORACLE anchor selection", res["oracle"], f"  (coverage {cov_o.mean():.0%})"))
@@ -291,6 +317,12 @@ def main():
     ap.add_argument("--recalibrate", action="store_true")
     ap.add_argument("--oracle", action="store_true", help="also report the oracle anchor-selection floor")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--min-inliers", type=int, default=0, help="drop anchors with fewer inliers")
+    ap.add_argument("--r-agree", type=float, default=R_AGREE, help="consensus agreement radius (m)")
+    ap.add_argument("--no-plot", action="store_true")
+    ap.add_argument("--half", type=int, default=HALF_WIN, help="consensus window, stills either side")
+    ap.add_argument("--gate-r", type=float, default=0.0,
+                    help=">0: keep a still's own anchor when within this many m of consensus, fill gaps")
     a = ap.parse_args()
     flights = a.flights.split(",")
     if a.oracle and set(flights) & set(HELD_OUT):
@@ -304,7 +336,9 @@ def main():
           f"{calib['fit_resid_median_m']:.1f} m, p90 {calib['fit_resid_p90_m']:.1f} m, implied HFOV "
           f"{calib['implied_hfov_deg']:.1f} deg")
 
-    results = [run_flight(fl, a.estimator, calib, oracle=a.oracle) for fl in flights]
+    results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
+                          min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r)
+               for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):
         print(fmt(key, {k: float(np.mean([r[key][k] for r in results])) for k in results[0][key]}))

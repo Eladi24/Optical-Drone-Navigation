@@ -955,7 +955,8 @@ void processVideoNavigation(
         cv::imshow("Tracking Stability", graph);
     }
 
-    std::cout << "\nPress any key to close..." << std::endl;
-    cv::waitKey(0);
+    std::cout << "\nPress any key to close (closes automatically in "
+              << kEndOfRunWindowTimeoutMs / 1000 << " s)..." << std::endl;
+    cv::waitKey(kEndOfRunWindowTimeoutMs);
     cv::destroyAllWindows();
 }

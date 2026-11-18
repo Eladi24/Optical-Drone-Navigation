@@ -70,19 +70,28 @@ private:
     // different images from different threads; only feature_cache_ itself needs synchronizing
     // (done in getCachedFeatures(), not here), same division of responsibility as
     // ORBFeatureEstimator's own extract-outside-lock/insert-inside-lock split.
-    ExtractedFeatures extract(const cv::Mat& image, const cv::Mat& mask = cv::Mat());
+    // `session` = which DISK session runs it (nullptr -> extractor_session_, the 1-thread one shared
+    // by the concurrent crop extractions; beginFrame passes query_extractor_session_).
+    ExtractedFeatures extract(const cv::Mat& image, const cv::Mat& mask = cv::Mat(),
+                              Ort::Session* session = nullptr);
 
     // Thread-safe: double-checked rwlock locking, mirrors ORBFeatureEstimator::getCachedFeatures()
     // exactly (shared rdlock fast path for cache hits, exclusive wrlock only on a genuine miss,
     // with a second lookup after re-acquiring the lock in case another thread inserted the same
     // key while this one was computing). Pointers to unordered_map values remain valid across
-    // insertion/rehash by the container's own standard guarantee (only erasure invalidates them,
-    // and nothing here ever erases) -- the lock exists to serialize concurrent structural
+    // insertion/rehash by the container's own standard guarantee (only erasure invalidates them;
+    // the only erase is beginFrame()'s query eviction, which runs before that frame's candidate
+    // tasks start and after the previous frame's have all joined) -- the lock exists to serialize concurrent structural
     // mutation, not for pointer-stability reasons.
-    const ExtractedFeatures* getCachedFeatures(const cv::Mat& image, const cv::Mat& mask = cv::Mat());
+    const ExtractedFeatures* getCachedFeatures(const cv::Mat& image, const cv::Mat& mask = cv::Mat(),
+                                               Ort::Session* session = nullptr);
 
     Ort::Env env_;
     Ort::Session extractor_session_;
+    // Query-only DISK session with several intra-op threads (2026-11-18). The query is extracted
+    // once per frame in beginFrame(), serially, before the candidate tasks start, so the 1-thread
+    // session left the other cores idle for ~1.4 s/frame. Threads: env DRONENAV_QUERY_THREADS.
+    Ort::Session query_extractor_session_;
     Ort::Session lightglue_session_;
     Ort::MemoryInfo mem_info_;
     cv::Mat feature_mask_;

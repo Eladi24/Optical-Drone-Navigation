@@ -16,6 +16,10 @@
 // or ORB/SIFT/Hybrid are matching images at two different real-world scales.
 constexpr int kReferenceCropMeters = 300;
 
+// End-of-run result windows close on any key OR after this long, so unattended/back-to-back
+// runs don't block forever on cv::waitKey(0) (2026-11-18). Mid-run pauses (space) still wait.
+constexpr int kEndOfRunWindowTimeoutMs = 15000;
+
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
     const cv::Mat& map,
     double center_lat, double center_lng,
