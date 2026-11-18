@@ -123,14 +123,17 @@ mismatches — that visual inspection alone would not have caught.
 Current real-world accuracy is best described as coarse localization (several hundred meters to
 low kilometers) rather than precision positioning. Systematic testing across descriptor choice,
 reference-map resolution, position-fusion strategy, and per-stage retrieval/matching instrumentation
-narrowed this to a specific, measured bottleneck: most error originates in candidate retrieval
-(finding the right map region to compare against in the first place), not in verifying a match once
-a candidate is found, or in position fusion. This points to a cross-domain image matching problem —
-real aerial camera footage matched against satellite imagery captured at a different time and by a
-different sensor — that remains an active research area, not an implementation defect. On synthetic
-data, where drone and reference imagery share an identical source, the same pipeline performs well,
-which helped isolate the real-world gap to content and domain differences rather than the matching
-algorithms themselves.
+shows that a large share of the error starts at candidate retrieval: finding the right map region to
+compare against in the first place. The underlying difficulty is cross-domain image matching. Real
+aerial camera footage is matched against satellite imagery captured at a different time and by a
+different sensor, which remains an active research area. On synthetic data, where drone and
+reference imagery share an identical source, the same pipeline performs well, which helped isolate
+the real-world gap to content and domain differences.
+
+Per-stage profiling later exposed a silent bug in the learned matchers: a feature cache keyed by
+image memory address meant every frame was verified against the first frame's keypoints, because
+the frame buffer is reused at the same address. It is fixed, guarded by an invariant check, and the
+learned-matching results are being re-measured flight by flight.
 
 A trajectory-level fusion strategy — exploiting whole-flight structure rather than filtering frame by
 frame — measurably reduces error beyond the causal Kalman filter alone, evidence that some of the
@@ -166,14 +169,14 @@ An API key is required for the live simulation/Haifa modes (Google Static Maps);
 ## Status
 
 Actively investigated rather than a finished product. The core pipeline, all three fusion strategies,
-and the evaluation harness are complete and working. A systematic bottleneck diagnosis — instrumenting
-retrieval accuracy independently of match verification and fusion — pinpointed candidate retrieval,
-not feature matching itself, as the dominant source of error, motivating the retrieval/matching split
-and the learned (ONNX Runtime) implementations now in place alongside the classical baseline.
-Trajectory-level batch fusion has since been evaluated on held-out flights: it consistently reduces
-error but does not, on its own, close the gap to precision positioning — consistent with the
-retrieval-bound diagnosis. Learned retrieval has since advanced from frozen to fine-tuned to
-VLAD-aggregated transformer features. Current work: re-evaluating all configurations under the
-calibrated camera model, combining frame-to-frame odometry with map matches, and coarse-to-fine
+and the evaluation harness are complete and working. A systematic bottleneck diagnosis, instrumenting
+retrieval accuracy independently of match verification and fusion, identified candidate retrieval as
+a major source of error. That motivated the retrieval/matching split and the learned (ONNX Runtime)
+implementations now in place alongside the classical baseline. Trajectory-level batch fusion has
+since been evaluated on held-out flights: it consistently reduces error but does not, on its own,
+close the gap to precision positioning. Learned retrieval has since advanced from frozen to
+fine-tuned to VLAD-aggregated transformer features. Current work: re-evaluating the learned pipeline
+flight by flight after the camera-model and feature-cache fixes, combining frame-to-frame odometry
+with map matches, and coarse-to-fine
 registration (using the estimated trajectory as a prior for precise local alignment against the
 map). Real-time deployment on Jetson Orin follows once accuracy targets are met.
