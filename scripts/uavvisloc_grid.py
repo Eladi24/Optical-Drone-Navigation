@@ -96,3 +96,77 @@ def nearest_grid_index(lat, lng, grid_lats, grid_lngs):
     apart, no need for a real haversine here)."""
     d2 = (grid_lats - lat) ** 2 + (grid_lngs - lng) ** 2
     return int(np.argmin(d2))
+
+
+# ---------------------------------------------------------------------------
+# Query (drone-frame) side, mirroring the C++ dataset pipeline (added 2026-11-19
+# for the north-up retrieval eval). Before this, both Python retrieval evals
+# embedded the WHOLE photo squashed to 224x224 with no rotation, which is not
+# what the C++ pipeline hands to retrieval.
+#   - GSD: CameraModel::groundSampleDistance(alt, width, kUavVisLocHfovDeg=51.5),
+#     alt = the altitude cache the C++ run used (masks/..._altitude.txt: AGL
+#     where a DEM file exists, else mean telemetry height).
+#   - crop: centred square, take = clamp(round(300 / gsd), 20, min(w, h))
+#     (src/VideoProcessing.cpp legacy_crop_roi), resized to
+#     round(take * gsd / map_mpp) px (legacy_crop_target_px).
+#   - north-up: the full frame warped about the crop centre with
+#     getRotationMatrix2D(c, -heading, 1) into a take x take output
+#     (the 2026-11-18 pre-warp; heading = telemetry Heading = Phi1).
+# ---------------------------------------------------------------------------
+UAVVISLOC_HFOV_DEG = 51.5
+QUERY_MODES = ("full", "crop", "northup")
+
+
+def load_altitude_cache(flight: str, masks_dir: str = "masks") -> float:
+    with open(f"{masks_dir}/Videos_dataset_uavvisloc_{flight}.avi_altitude.txt") as f:
+        return float(f.read().split()[0])
+
+
+def load_headings(flight: str, csv_dir: str = "CSV Files") -> dict:
+    """{0-based Frame: heading_deg} from the dataset telemetry CSV."""
+    out = {}
+    with open(f"{csv_dir}/telemetry_uavvisloc_{flight}.csv", newline="") as f:
+        for row in csv.DictReader(f):
+            out[int(row["Frame"])] = float(row["Heading"])
+    return out
+
+
+def map_mpp(map_img, bounds) -> float:
+    """Mean of per-axis mpp, exactly as Main.cpp computes `mpp`."""
+    lt_lat, lt_lon, rb_lat, rb_lon = bounds
+    h, w = map_img.shape[:2]
+    width_m = (rb_lon - lt_lon) * m_per_deg_lng((lt_lat + rb_lat) / 2.0)
+    height_m = (lt_lat - rb_lat) * M_PER_DEG_LAT
+    return (width_m / w + height_m / h) / 2.0
+
+
+def frame_gsd(altitude_m: float, frame_width_px: int,
+              hfov_deg: float = UAVVISLOC_HFOV_DEG) -> float:
+    return 2.0 * altitude_m * math.tan(math.radians(hfov_deg) / 2.0) / frame_width_px
+
+
+def make_query(frame, mode: str, gsd: float, mpp: float, heading_deg=None,
+               crop_size_m: float = CROP_SIZE_M):
+    """Returns the BGR query image the C++ pipeline would hand to retrieval for
+    `mode` in QUERY_MODES ('full' = legacy whole-photo protocol)."""
+    import cv2
+    if mode == "full":
+        return frame
+    h, w = frame.shape[:2]
+    take = max(20, min(int(round(crop_size_m / gsd)), min(w, h)))
+    target = max(20, int(round(take * gsd / mpp)))
+    if mode == "northup":
+        if heading_deg is None or not math.isfinite(heading_deg):
+            raise ValueError("northup query needs a finite heading")
+        cx, cy = w // 2 - take // 2 + take / 2.0, h // 2 - take // 2 + take / 2.0
+        M = cv2.getRotationMatrix2D((cx, cy), -heading_deg, 1.0)
+        M[0, 2] += take / 2.0 - cx
+        M[1, 2] += take / 2.0 - cy
+        sq = cv2.warpAffine(frame, M, (take, take), flags=cv2.INTER_LINEAR,
+                            borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+    elif mode == "crop":
+        sx, sy = w // 2 - take // 2, h // 2 - take // 2
+        sq = frame[sy:sy + take, sx:sx + take]
+    else:
+        raise ValueError(f"unknown query mode {mode!r}")
+    return cv2.resize(sq, (target, target))

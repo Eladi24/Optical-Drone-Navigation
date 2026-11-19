@@ -169,7 +169,7 @@ def build_vocabulary(embedder, weights_tag, n_clusters, crops_per_flight):
     return centroids
 
 
-def eval_flight(flight, embedder, centroids, power_norm):
+def eval_flight(flight, embedder, centroids, power_norm, queries=("full",), frame_stride=1):
     map_path = IMAGES_DIR / f"map_clean_uavvisloc_{flight}.png"
     gt_path = CSV_DIR / f"ground_truth_uavvisloc_{flight}.csv"
     map_img = cv2.imread(str(map_path))
@@ -186,20 +186,29 @@ def eval_flight(flight, embedder, centroids, power_norm):
     lats, lngs = np.array(lats), np.array(lngs)
     print(f"  flight {flight}: {len(crop_vecs)} grid cells encoded (VLAD dim {crop_vecs.shape[1]})")
 
-    ranks = []
+    mpp = grid.map_mpp(map_img, bounds)
+    alt = grid.load_altitude_cache(flight) if any(q != "full" for q in queries) else None
+    headings = grid.load_headings(flight) if "northup" in queries else {}
+    ranks = {q: [] for q in queries}
     for row in csv.DictReader(open(gt_path, newline="")):
+        if int(row["Frame"]) % frame_stride:
+            continue
         lat, lng, label = float(row["Lat"]), float(row["Lng"]), row["Label"]
         frame = cv2.imread(str(DATASET_DIR / flight / "drone" / label))
         if frame is None:
             continue
         true_idx = grid.nearest_grid_index(lat, lng, lats, lngs)
-        fvec = vlad_encode(embedder.embed_dense(frame), centroids, power_norm)
-        order = np.argsort(-(crop_vecs @ fvec))
-        ranks.append(int(np.where(order == true_idx)[0][0]) + 1)
+        gsd = grid.frame_gsd(alt, frame.shape[1]) if alt else None
+        for q in queries:
+            query = grid.make_query(frame, q, gsd, mpp, headings.get(int(row["Frame"])))
+            fvec = vlad_encode(embedder.embed_dense(query), centroids, power_norm)
+            order = np.argsort(-(crop_vecs @ fvec))
+            ranks[q].append(int(np.where(order == true_idx)[0][0]) + 1)
 
-    ranks = np.array(ranks)
-    r = {k: float((ranks <= k).mean()) for k in (1, 5, 10)}
-    print(f"    n={len(ranks)}  recall@1={r[1]:.1%}  recall@5={r[5]:.1%}  recall@10={r[10]:.1%}")
+    for q in queries:
+        ranks[q] = np.array(ranks[q])
+        r = {k: float((ranks[q] <= k).mean()) for k in (1, 5, 10)}
+        print(f"    [{q:>7}] n={len(ranks[q])}  recall@1={r[1]:.1%}  recall@5={r[5]:.1%}  recall@10={r[10]:.1%}")
     return ranks
 
 
@@ -211,6 +220,12 @@ def main():
     ap.add_argument("--vocab-crops-per-flight", type=int, default=150)
     ap.add_argument("--no-power-norm", action="store_true")
     ap.add_argument("--flights", default=None)
+    ap.add_argument("--queries", default="full",
+                    help="Comma-separated query modes: full (legacy whole photo), crop (C++ GSD-normalised "
+                         "centre crop), northup (crop + -heading pre-warp). See uavvisloc_grid.make_query().")
+    ap.add_argument("--json-out", default=None)
+    ap.add_argument("--frame-stride", type=int, default=1,
+                    help="score every Nth GT frame (consecutive stills overlap heavily)")
     args = ap.parse_args()
 
     flights = args.flights.split(",") if args.flights else ALL_FLIGHTS
@@ -220,32 +235,16 @@ def main():
     centroids = build_vocabulary(embedder, tag, args.clusters, args.vocab_crops_per_flight)
     power_norm = not args.no_power_norm
 
-    groups = {"dev": [], "validation": [], "held-out": []}
+    queries = tuple(args.queries.split(","))
+    per_flight = {}
     for flight in flights:
         print(f"Evaluating flight {flight}...")
-        ranks = eval_flight(flight, embedder, centroids, power_norm)
-        if ranks is None or len(ranks) == 0:
-            continue
-        g = "dev" if flight in DEV_FLIGHTS else \
-            "validation" if flight in VALIDATION_FLIGHTS else "held-out"
-        groups[g].append(ranks)
-
-    print(f"\n{'=' * 70}\nVLAD (k={args.clusters}, power_norm={power_norm}, weights={args.weights})"
-          f"\nPOOLED BY GROUP\n{'=' * 70}")
-    all_ranks = []
-    for name, rank_lists in groups.items():
-        if not rank_lists:
-            continue
-        pooled = np.concatenate(rank_lists)
-        all_ranks.append(pooled)
-        r = {k: float((pooled <= k).mean()) for k in (1, 5, 10)}
-        print(f"{name:>10}  n={len(pooled):5d}  recall@1={r[1]:.1%}  "
-              f"recall@5={r[5]:.1%}  recall@10={r[10]:.1%}")
-    if all_ranks:
-        pooled = np.concatenate(all_ranks)
-        r = {k: float((pooled <= k).mean()) for k in (1, 5, 10)}
-        print(f"{'ALL':>10}  n={len(pooled):5d}  recall@1={r[1]:.1%}  "
-              f"recall@5={r[5]:.1%}  recall@10={r[10]:.1%}")
+        ranks = eval_flight(flight, embedder, centroids, power_norm, queries, args.frame_stride)
+        if ranks:
+            per_flight[flight] = ranks
+    from eval_retrieval_recall import report_pooled
+    report_pooled(per_flight, queries,
+                  f"VLAD (k={args.clusters}, power_norm={power_norm}, weights={args.weights})", args.json_out)
 
 
 if __name__ == "__main__":
