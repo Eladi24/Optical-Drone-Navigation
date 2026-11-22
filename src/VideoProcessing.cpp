@@ -303,11 +303,17 @@ void processVideoNavigation(
 
     std::string output_video_path = "Videos/navigation_" + algorithm_name +
                                     "_" + location_name + "_" + video_name + ".avi";
+    // Navigation video is opt-in (DRONENAV_SAVE_VIDEO=1): 0.04-0.5 GB per run,
+    // and run videos aren't kept until results are good. The CSV is the record.
     cv::VideoWriter video_writer;
-    video_writer.open(output_video_path,
-                      cv::VideoWriter::fourcc('M','J','P','G'),
-                      fps / frame_skip,
-                      cv::Size(1200, 800), true);
+    if (std::getenv("DRONENAV_SAVE_VIDEO") != nullptr) {
+        video_writer.open(output_video_path,
+                          cv::VideoWriter::fourcc('M','J','P','G'),
+                          fps / frame_skip,
+                          cv::Size(1200, 800), true);
+    } else {
+        std::cout << "   Navigation video not saved (set DRONENAV_SAVE_VIDEO=1 to save it)." << std::endl;
+    }
 
     std::string telemetry_path = "CSV Files/video_telemetry_" + algorithm_name +
                                  "_" + location_name + "_" + video_name + ".csv";

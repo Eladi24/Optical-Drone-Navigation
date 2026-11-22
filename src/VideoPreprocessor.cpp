@@ -1,4 +1,5 @@
 #include "VideoPreprocessor.hpp"
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <numeric>
@@ -214,6 +215,14 @@ VideoMetadata VideoPreprocessor::process(int frame_skip)
     //   The mask is NOT used to zero pixels — it is only returned so the
     //   calling pipeline can pass it to feature extractors.
     // -------------------------------------------------------------------------
+    // Opt-in only (DRONENAV_SAVE_VIDEO=1): no pipeline reads this video back
+    // -- both the Haifa and the dataset pipelines navigate on the original
+    // video -- and it cost ~0.15-1.6 GB per flight on every run.
+    if (std::getenv("DRONENAV_SAVE_VIDEO") == nullptr) {
+        cap.release();
+        std::cout << "Preprocessed (CLAHE) video not written (set DRONENAV_SAVE_VIDEO=1 to save it)." << std::endl;
+        return metadata;
+    }
     cap.set(cv::CAP_PROP_POS_FRAMES, 0);
     cv::VideoWriter writer(output_path_,
                            cv::VideoWriter::fourcc('M','J','P','G'),
