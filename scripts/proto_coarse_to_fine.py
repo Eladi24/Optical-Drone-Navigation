@@ -8,8 +8,12 @@ Today's per-frame anchors carry ~100-160 m error even when the chosen crop is co
 8-DOF homographies from ~13-15 inliers on a 1.2 m/px map with 256 keypoints (diagnosed
 2026-11-17 -- no sign/axis bug; projecting through H is worse than taking the crop centre).
 
-This step isolates REGISTRATION from prior quality: the prior is GPS + random offset
-(per-axis sigma = SIGMA/sqrt(2), i.e. ~SIGMA m RMS radial). Step 2 swaps in the real fused prior.
+Step 1 (--prior synthetic, default) isolates REGISTRATION from prior quality: the prior is GPS +
+random offset (per-axis sigma = SIGMA/sqrt(2), i.e. ~SIGMA m RMS radial).
+Step 2 (--prior fused, added 2026-11-22) uses the REAL prior: the fused stills-VO + gated-consensus
+track of --estimator (default split_vlad_xfeat) with the frozen fusion settings (--half 10
+--min-inliers 16 --gate-r 100 --prior steplen --fill bridge). No GPS enters the prior. The summary
+then also scores the deliverable: c2f position where accepted, else the fused prior, over ALL stills.
 
 Per still:
   1. Known geometry removes most unknowns: scale from AGL + measured 51.5 deg HFOV, rotation
@@ -248,7 +252,25 @@ def still_north_up(path, agl, hdg, res):
 
 
 # ----------------------------------------------------------------------------- main
-def register_flight(flight, kind, res, step, net, cache_dir, seed, limit):
+def fused_prior_offsets(flight, estimator):
+    """Per-still (east, north) offset in metres of the fused track from GT, in load_stills order
+    (both scripts index stills by row of <flight>.csv). GT is used only to express the fused
+    position as an offset, exactly like the synthetic prior; the position itself is GPS-free."""
+    sys.path.insert(0, str(Path(__file__).parent))
+    import stills_odometry_fusion as F
+    calib = json.load(open(F.CALIB_PATH))
+    S = F.load_flight(flight, estimator)
+    G = np.column_stack([S["gx"], S["gy"]])
+    p = F.dead_reckon(F.predict_steps(S, calib, prior="steplen"))
+    k = S["a_inl"] >= 16
+    a_idx, ax, ay = S["a_idx"][k], S["ax"][k], S["ay"][k]
+    est = F.local_consensus(p, a_idx, ax, ay, half=10)
+    fused = F.gate_and_fill(est, p, a_idx, ax, ay, len(G), 100, fill="bridge")
+    return fused - G
+
+
+def register_flight(flight, kind, res, step, net, cache_dir, seed, limit, prior="synthetic",
+                    estimator="split_vlad_xfeat"):
     mp = MapSource(flight, kind, res)
     res = mp.res
     MK, MD = mp.global_features(net, cache_dir)
@@ -258,8 +280,12 @@ def register_flight(flight, kind, res, step, net, cache_dir, seed, limit):
     results = []
     t0 = time.time()
     sel = stills[::step][:limit] if limit else stills[::step]
+    fused_off = fused_prior_offsets(flight, estimator) if prior == "fused" else None
     for n, st in enumerate(sel):
-        off = rng.normal(0, SIGMA_M / math.sqrt(2), 2)            # (east, north) metres
+        if fused_off is not None:
+            off = fused_off[st["idx"]]                                 # real prior, (east, north) m
+        else:
+            off = rng.normal(0, SIGMA_M / math.sqrt(2), 2)            # (east, north) metres
         p_lat = st["lat"] + off[1] / M_LAT
         p_lon = st["lon"] + off[0] / m_lng(st["lat"])
         px, py = mp.latlon_to_px(p_lat, p_lon)
@@ -343,6 +369,13 @@ def summarise(results, label):
     # share of ALL stills localised within 20/50 m (accepted and correct)
     s["all_a20"] = float(np.sum(e <= 20) / max(n, 1)) if len(e) else 0.0
     s["all_a50"] = float(np.sum(e <= 50) / max(n, 1)) if len(e) else 0.0
+    # Deliverable: c2f where accepted, else fall back to the prior (meaningful for --prior fused)
+    comb = np.array([r["err"] if r["accepted"] else r["prior_err"] for r in results])
+    pri = np.array([r["prior_err"] for r in results])
+    if n:
+        s.update(prior_med=float(np.median(pri)), prior_mean=float(pri.mean()), prior_p90=float(np.percentile(pri, 90)),
+                 comb_med=float(np.median(comb)), comb_mean=float(comb.mean()), comb_p90=float(np.percentile(comb, 90)),
+                 comb_a20=float(np.mean(comb <= 20)), comb_a50=float(np.mean(comb <= 50)))
     s["rejected_but_good_lt50"] = int(np.sum([(not r["accepted"]) and r.get("err", 1e9) <= 50 for r in results]))
     print(f"  {label}: n={n} accepted {len(acc)} ({s['accept_rate']*100:.0f}%)", end="")
     if len(e):
@@ -351,6 +384,10 @@ def summarise(results, label):
               f"within 20/50 m of ALL stills {s['all_a20']*100:.0f}/{s['all_a50']*100:.0f}%")
     else:
         print()
+    if n:
+        print(f"    ALL stills: prior mean/med/p90 {s['prior_mean']:.0f}/{s['prior_med']:.0f}/{s['prior_p90']:.0f} m -> "
+              f"c2f-else-prior {s['comb_mean']:.0f}/{s['comb_med']:.0f}/{s['comb_p90']:.0f} m "
+              f"(A@20 {s['comb_a20']*100:.0f}%, A@50 {s['comb_a50']*100:.0f}%)")
     return s
 
 
@@ -365,6 +402,9 @@ def main():
     ap.add_argument("--seed", type=int, default=17)
     ap.add_argument("--cache", default=str(REPO / "models" / "c2f_cache"))
     ap.add_argument("--out", default="")
+    ap.add_argument("--prior", choices=["synthetic", "fused"], default="synthetic",
+                    help="synthetic = GPS + sigma noise (Step 1); fused = the real fused track (Step 2)")
+    ap.add_argument("--estimator", default="split_vlad_xfeat", help="anchors for --prior fused")
     a = ap.parse_args()
     held = {"02", "05", "06", "11"}
     flights = [f.strip() for f in a.flights.split(",")]
@@ -375,7 +415,7 @@ def main():
     net = DiskLightGlue(a.threads)
     allr, summ = [], []
     for f in flights:
-        r = register_flight(f, a.map, a.res, a.step, net, cache, a.seed, a.limit)
+        r = register_flight(f, a.map, a.res, a.step, net, cache, a.seed, a.limit, a.prior, a.estimator)
         summ.append(summarise(r, f"flight {f} {a.map}"))
         allr += r
     summ.append(summarise(allr, f"ALL {a.map}"))
