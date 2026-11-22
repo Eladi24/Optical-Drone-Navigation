@@ -182,18 +182,25 @@ def fit_calibration(flights, estimator):
             "implied_hfov_deg": hfov}
 
 
-def predict_steps(S, calib):
+def predict_steps(S, calib, prior="speed"):
+    """Failed VO pairs get a weak prior along the compass heading. prior="speed" (the original):
+    recent median speed * dt. prior="steplen" (2026-11-22): recent median step LENGTH, ignoring dt.
+    The speed prior explodes on capture pauses: flight 08 step 213 has dt = 568 s and became a
+    14.8 km phantom step (GT: 299 m), which was the whole 08 consensus blow-up (p90 14.5 km). The
+    surveys capture at ~constant spacing whatever dt is, so step length is the better prior."""
     body = design(S) @ np.array(calib["W"])
     dt = np.diff(S["t"])
     ok = S["vo_ok"]
-    sp_ok = np.linalg.norm(body, axis=1) / np.maximum(dt, 1e-3)
-    fallback = float(np.median(sp_ok[ok])) if ok.any() else 20.0
-    speed, last = np.empty(len(body)), []
+    step_len = np.linalg.norm(body, axis=1)
+    rate = step_len if prior == "steplen" else step_len / np.maximum(dt, 1e-3)
+    fallback = float(np.median(rate[ok])) if ok.any() else (80.0 if prior == "steplen" else 20.0)
+    recent, last = np.empty(len(body)), []
     for i in range(len(body)):
         if ok[i]:
-            last = (last + [sp_ok[i]])[-5:]
-        speed[i] = np.median(last) if last else fallback
-    body = np.where(ok[:, None], body, np.column_stack([speed * dt, np.zeros(len(dt))]))
+            last = (last + [rate[i]])[-5:]
+        recent[i] = np.median(last) if last else fallback
+    prior_len = recent if prior == "steplen" else recent * dt
+    body = np.where(ok[:, None], body, np.column_stack([prior_len, np.zeros(len(dt))]))
     return body_to_world(body, S["hdg"][:-1])
 
 
@@ -232,11 +239,14 @@ def fmt(label, s, extra=""):
             f"A@20 {s['A@20']:5.1%}  A@50 {s['A@50']:5.1%}  A@100 {s['A@100']:5.1%}{extra}")
 
 
-def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r):
+def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
     """Consensus as a GATE, not an estimator (2026-11-18): where a still's own anchor lies within
     gate_r of the consensus prediction, keep that anchor (correct picks are ~26 m precise, while
     the consensus mean carries odometry drift across the window); else use the consensus. Stills
-    with no estimate are filled by dead-reckoning from the nearest covered still (no GT used)."""
+    with no estimate are filled by dead-reckoning from the nearest covered still (no GT used).
+    fill="bridge" (2026-11-22): a gap with covered stills on BOTH sides is dead-reckoned from both
+    and blended linearly by distance, so the drift is pinned at both ends; one-sided gaps (flight
+    start/end) are unchanged."""
     A = np.full((n, 2), np.nan)
     A[a_idx] = np.column_stack([ax, ay])
     agree = np.linalg.norm(A - est, axis=1) <= gate_r          # NaN compares False
@@ -244,17 +254,23 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r):
     cov = np.where(~np.isnan(out[:, 0]))[0]
     if cov.size:
         for i in np.where(np.isnan(out[:, 0]))[0]:
-            j = cov[np.argmin(np.abs(cov - i))]
-            out[i] = out[j] + (p[i] - p[j])
+            left, right = cov[cov < i], cov[cov > i]
+            if fill == "bridge" and left.size and right.size:
+                l, r = left[-1], right[0]
+                from_l, from_r = out[l] + (p[i] - p[l]), out[r] + (p[i] - p[r])
+                out[i] = ((r - i) * from_l + (i - l) * from_r) / (r - l)
+            else:
+                j = cov[np.argmin(np.abs(cov - i))]
+                out[i] = out[j] + (p[i] - p[j])
     return out
 
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
-               half=HALF_WIN, gate_r=0.0):
+               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward"):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
-    odo = predict_steps(S, calib)
+    odo = predict_steps(S, calib, prior=prior)
     ok = S["vo_ok"]
     step_err = np.linalg.norm(odo - np.diff(G, axis=0), axis=1)
     # Optional inlier gate (2026-11-18): after the stale query-cache fix, inlier counts separate
@@ -269,7 +285,7 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
     p = dead_reckon(odo)                                   # arbitrary origin: no GT
     est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree)
     if gate_r > 0:
-        est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r)
+        est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r, fill=fill)
     cov = ~np.isnan(est[:, 0])
     cons_err = np.linalg.norm(est[cov] - G[cov], axis=1)
 
@@ -280,7 +296,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
            "raw": stats(raw_err), "loess": stats(loess_err), "consensus": stats(cons_err),
            "consensus_coverage": float(cov.mean())}
     print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}  "
-          f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, half {half}, gate_r {gate_r:.0f}]")
+          f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, half {half}, "
+          f"gate_r {gate_r:.0f}, prior {prior}, fill {fill}]")
     print(f"  VO ok {res['vo_ok_frac']:.0%} | VO step err median {res['vo_step_err_median']:.1f} m | "
           f"anchors within 150 m: {res['anchors_within_150m_frac']:.1%}")
     print(fmt("raw anchors", res["raw"]))
@@ -323,6 +340,10 @@ def main():
     ap.add_argument("--half", type=int, default=HALF_WIN, help="consensus window, stills either side")
     ap.add_argument("--gate-r", type=float, default=0.0,
                     help=">0: keep a still's own anchor when within this many m of consensus, fill gaps")
+    ap.add_argument("--prior", choices=("speed", "steplen"), default="speed",
+                    help="weak prior for failed VO pairs: recent speed*dt (original) or recent step length")
+    ap.add_argument("--fill", choices=("forward", "bridge"), default="forward",
+                    help="with --gate-r: fill gaps from the nearest covered still, or bridge from both sides")
     a = ap.parse_args()
     flights = a.flights.split(",")
     if a.oracle and set(flights) & set(HELD_OUT):
@@ -337,7 +358,8 @@ def main():
           f"{calib['implied_hfov_deg']:.1f} deg")
 
     results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
-                          min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r)
+                          min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r,
+                          prior=a.prior, fill=a.fill)
                for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):
