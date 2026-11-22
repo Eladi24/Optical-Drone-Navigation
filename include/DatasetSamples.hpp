@@ -97,6 +97,21 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
     for (auto& s : getFlight03Sample())
         samples.push_back(std::move(s));
 
+    // 2026-11-22 Tier-1 map-resolution test: flight 01 against the ~0.6 m/px map (exactly 2x the
+    // baseline's pixels, same GeoTIFF, same bounds, anisotropy-corrected), everything else identical.
+    // The earlier "resolution ruled out" result predates the HFOV/AGL, stale-cache and pre-warp fixes.
+    // Name deliberately avoids the "uavvisloc_01" substring (see the esri note below). Shares the
+    // cached video, so the altitude/mask caches (keyed on the video path) are shared too.
+    samples.push_back({
+        "fine01", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/01/drone", "01", 817,
+        "Datasets/UAV_VisLoc_dataset/01/01.csv",
+        "Images/map_clean_uavvisloc_01_fine.png",
+        "Datasets/UAV_VisLoc_dataset/satellite_ coordinates_range.csv",
+        "satellite01.tif",
+        "Videos/dataset_uavvisloc_01.avi",
+    });
+
     // STRATEGY.md Phase 1 ("clean reference imagery" -- see CLAUDE.md's
     // Phase 1 Investigation Log entry): same flights, same telemetry, same
     // assembled video (video_path deliberately points at the SAME cached

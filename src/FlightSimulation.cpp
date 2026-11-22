@@ -156,6 +156,26 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<DiskLightGlueMatching>(),
                 "split_vlad_disk");
 
+        // 2026-11-22 Tier-1 single-variable variants of SPLIT_VLAD_DISK (one change each).
+        case PositionAlgorithm::SPLIT_VLAD_DISK_K20:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxVladRetrieval>("models/dinov2_s_finetuned_dense.onnx",
+                                                    "models/vlad_vocab_finetuned_k64.bin"),
+                std::make_unique<DiskLightGlueMatching>(),
+                "split_vlad_disk_k20", /*top_k=*/20);
+        case PositionAlgorithm::SPLIT_VLAD_XFEAT:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxVladRetrieval>("models/dinov2_s_finetuned_dense.onnx",
+                                                    "models/vlad_vocab_finetuned_k64.bin"),
+                std::make_unique<XFeatMatching>(),
+                "split_vlad_xfeat");
+        case PositionAlgorithm::SPLIT_VLAD_ORB:
+            return std::make_unique<SplitPipelineEstimator>(
+                std::make_unique<OnnxVladRetrieval>("models/dinov2_s_finetuned_dense.onnx",
+                                                    "models/vlad_vocab_finetuned_k64.bin"),
+                std::make_unique<OrbRansacMatching>(500),
+                "split_vlad_orb");
+
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
         // createPositionEstimator should never be called for it — fall through

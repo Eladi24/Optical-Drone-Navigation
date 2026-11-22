@@ -152,7 +152,7 @@ enum class PositionAlgorithm {
                        // pose (~35m vs DISK+LightGlue's ~74m PDM@5 on an already-correct
                        // crop). Discrimination stays DISK+LightGlue's; only the pose
                        // changes. See CLAUDE.md's "Option A" Investigation Log.
-    SPLIT_VLAD_DISK    // RESULTS.md route #2 / AnyLoc: SplitPipelineEstimator, same
+    SPLIT_VLAD_DISK,   // RESULTS.md route #2 / AnyLoc: SplitPipelineEstimator, same
                        // shape as SPLIT_FINETUNED_DISK but retrieval swapped from a
                        // pooled DINOv2 embedding to VLAD aggregation over the fine-tuned
                        // DINOv2 dense patch features (OnnxVladRetrieval), matching held
@@ -160,6 +160,10 @@ enum class PositionAlgorithm {
                        // variable against SPLIT_FINETUNED_DISK. Python pre-measurement:
                        // best held-out pure-embedding recall@k in the project. See
                        // CLAUDE.md's "VLAD retrieval" Investigation Log.
+    SPLIT_VLAD_DISK_K20, // 2026-11-22 Tier-1 single-variable tests against SPLIT_VLAD_DISK
+    SPLIT_VLAD_XFEAT,    // (all with the stale-cache fix + heading pre-warp): top_k 10 -> 20;
+    SPLIT_VLAD_ORB,      // matching DISK+LightGlue -> XFeat; matching -> ORB/RANSAC. Retrieval
+                         // is the same fine-tuned VLAD k64 in all three.
 };
 
 std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm algorithm);

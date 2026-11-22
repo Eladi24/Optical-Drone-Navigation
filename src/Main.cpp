@@ -752,6 +752,12 @@ int main(int argc, char **argv)
             algorithm = PositionAlgorithm::SPLIT_FINETUNED_DISK_REFINED;
         else if (algo_str == "split_vlad_disk" || algo_str == "SPLIT_VLAD_DISK")
             algorithm = PositionAlgorithm::SPLIT_VLAD_DISK;
+        else if (algo_str == "split_vlad_disk_k20")
+            algorithm = PositionAlgorithm::SPLIT_VLAD_DISK_K20;
+        else if (algo_str == "split_vlad_xfeat")
+            algorithm = PositionAlgorithm::SPLIT_VLAD_XFEAT;
+        else if (algo_str == "split_vlad_orb")
+            algorithm = PositionAlgorithm::SPLIT_VLAD_ORB;
         else
             std::cout << "Unknown algorithm '" << algo_str << "', using HYBRID." << std::endl;
     }
