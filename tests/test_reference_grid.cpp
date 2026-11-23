@@ -118,3 +118,17 @@ TEST(FootprintMatchedGrid, DegenerateInputsFallBackToFrozen)
     EXPECT_EQ(g.crop_meters, kReferenceCropMeters);
     EXPECT_EQ(g.spacing_meters, 200);
 }
+
+// Ratio rule: only below 0.75 x 300 = 225 m. Flight 01/02 (261 m) and 05 (230 m) keep the frozen grid.
+TEST(FootprintMatchedGrid, RatioRuleKeepsFrozenAboveThreshold)
+{
+    for (double fp_m : {261.1, 230.0, 225.0}) {
+        ReferenceGridGeometry g = footprintMatchedCropGeometry(3000, 2000, fp_m / 2000.0);
+        EXPECT_EQ(g.crop_meters, kReferenceCropMeters) << fp_m;
+        EXPECT_EQ(g.spacing_meters, 200) << fp_m;
+    }
+    ReferenceGridGeometry below = footprintMatchedCropGeometry(3000, 2000, 224.0 / 2000.0);
+    EXPECT_EQ(below.crop_meters, 224);
+    // min_ratio = 1.0 reproduces the original (unthresholded) rule, e.g. flight 01 -> 261 m
+    EXPECT_EQ(footprintMatchedCropGeometry(3000, 2000, 261.1 / 2000.0, 300, 200, 1.0).crop_meters, 261);
+}

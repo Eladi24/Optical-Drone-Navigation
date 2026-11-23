@@ -16,10 +16,11 @@
 #include <sys/stat.h>
 
 ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame_height_px, double frame_gsd,
-                                                   int frozen_crop_meters, int frozen_spacing_meters)
+                                                   int frozen_crop_meters, int frozen_spacing_meters,
+                                                   double min_ratio)
 {
     const double footprint_m = std::min(frame_width_px, frame_height_px) * frame_gsd;
-    if (!(footprint_m > 0.0) || footprint_m >= frozen_crop_meters)
+    if (!(footprint_m > 0.0) || footprint_m >= min_ratio * frozen_crop_meters)
         return {frozen_crop_meters, frozen_spacing_meters};
     const int crop = std::max(1, static_cast<int>(std::lround(footprint_m)));
     const int spacing = std::max(1, static_cast<int>(std::lround(

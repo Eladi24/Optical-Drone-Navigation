@@ -30,14 +30,18 @@ constexpr int kEndOfRunWindowTimeoutMs = 15000;
 // When it covers less (AerialVL ~180-200 m; UAV-VisLoc 01/02/05/06/10 at 189-262 m), the GSD-normalised drone crop is
 // clamped to the frame (so it shows LESS ground than every reference crop), which cost AerialVL retrieval ~10 points
 // of R@1. Rule: crop = min(frozen crop, short-side footprint); spacing keeps the frozen ratio (200/300), so crops keep
-// the same overlap and no gaps open between them. Exactly the frozen values whenever the footprint >= 300 m.
+// the same overlap and no gaps open between them.
+// Ratio rule (2026-11-23, pre-registered in INVESTIGATION_LOG before its test): applied ONLY when the footprint is
+// below min_ratio x the frozen crop (0.75 -> 225 m). Measured: fp crops HURT at ratio 0.87 (flight 01) and HELP at
+// 0.63-0.67 (flight 10, AerialVL av2); above the threshold the frozen geometry is returned unchanged.
 struct ReferenceGridGeometry {
     int crop_meters;
     int spacing_meters;
 };
 ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame_height_px, double frame_gsd,
                                                    int frozen_crop_meters = kReferenceCropMeters,
-                                                   int frozen_spacing_meters = 200);
+                                                   int frozen_spacing_meters = 200,
+                                                   double min_ratio = 0.75);
 
 cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg);
 
