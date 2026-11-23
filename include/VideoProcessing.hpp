@@ -25,7 +25,8 @@ constexpr int kEndOfRunWindowTimeoutMs = 15000;
 // take x take square centred there; pixels the camera never saw are black. Extracted from
 // processVideoNavigation() (2026-11-23) so the sign convention is unit-tested
 // (tests/test_prewarp.cpp).
-// Footprint-matched reference-crop geometry (2026-11-23, opt-in via DRONENAV_FOOTPRINT_CROPS=1).
+// Footprint-matched reference-crop geometry (2026-11-23; default ON in the dataset pipeline since that day,
+// DRONENAV_NO_FOOTPRINT_CROPS=1 disables it -- see src/Main.cpp for the adoption note).
 // The frozen grid uses 300 m crops every 200 m, implicitly assuming the drone frame's short side covers >= 300 m.
 // When it covers less (AerialVL ~180-200 m; UAV-VisLoc 01/02/05/06/10 at 189-262 m), the GSD-normalised drone crop is
 // clamped to the frame (so it shows LESS ground than every reference crop), which cost AerialVL retrieval ~10 points

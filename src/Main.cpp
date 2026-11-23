@@ -691,10 +691,14 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
     // of thousands of reference crops -- 200m keeps the crop count in the
     // same rough ballpark as Haifa's while still giving ORB/SIFT/Hybrid a
     // dense enough search grid.
-    // Footprint-matched reference crops (opt-in, 2026-11-23; see footprintMatchedCropGeometry). Frozen default:
-    // 300 m crops every 200 m. A no-op whenever the frame's short side covers >= 300 m.
+    // Footprint-matched reference crops + 0.75 ratio rule (see footprintMatchedCropGeometry): DEFAULT ON since
+    // 2026-11-23 (user decision). Pre-registered test: both fresh flights improved (av1 fused median 68 -> 50 m,
+    // held-out 06 43 -> 28 m) and the held-out median improved 34.3 -> 30.6 m, but the held-out MEAN rose 80.04 ->
+    // 80.30 m (06's unchanged wrong-consensus tail), failing the strict "no worse" criterion by 0.26 m; adopted
+    // anyway as a documented override. A no-op for frames covering >= 225 m (flights 01/02/03/04/05/08/11).
+    // DRONENAV_NO_FOOTPRINT_CROPS=1 restores the uavvisloc-v1 grid (300 m crops every 200 m) everywhere.
     ReferenceGridGeometry grid_geom{kReferenceCropMeters, 200};
-    if (const char* fp = std::getenv("DRONENAV_FOOTPRINT_CROPS"); fp && std::string(fp) == "1") {
+    if (std::getenv("DRONENAV_NO_FOOTPRINT_CROPS") == nullptr) {
         grid_geom = footprintMatchedCropGeometry(meta.width, meta.height, video_frame_gsd);
         std::cout << "  Footprint-matched crops ON: short-side footprint "
                   << std::min(meta.width, meta.height) * video_frame_gsd << " m -> crop " << grid_geom.crop_meters
