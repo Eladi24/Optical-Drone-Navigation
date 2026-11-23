@@ -29,7 +29,17 @@ double parseIsoTimestamp(const std::string& iso) {
     std::istringstream ss(iso);
     ss >> std::get_time(&tm, "%Y-%m-%dT%H:%M:%S");
     if (ss.fail()) return -1.0;
-    return static_cast<double>(timegm(&tm));
+    // Optional fractional seconds (".084"): AerialVL frames are 0.5 s apart, and dropping the
+    // fraction would quantise Time_Sec / the Kalman dt to 0 or 1 s. UAV-VisLoc's whole-second
+    // timestamps parse exactly as before (2026-11-23, tests/test_telemetry_importer.cpp).
+    double frac = 0.0;
+    if (ss.peek() == '.') {
+        ss.get();
+        std::string digits;
+        while (std::isdigit(ss.peek())) digits += static_cast<char>(ss.get());
+        if (!digits.empty()) frac = std::stod("0." + digits);
+    }
+    return static_cast<double>(timegm(&tm)) + frac;
 }
 
 // "08_0221.JPG" -> 220. DatasetVideoAssembler stitches <prefix>%04d.JPG for i = 1..frame_count,

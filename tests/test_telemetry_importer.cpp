@@ -70,6 +70,25 @@ TEST(TelemetryImporter, TimeIsRealElapsedSeconds)
     EXPECT_DOUBLE_EQ(times[220], 570.0);  // the capture pause is preserved, not a nominal fps
 }
 
+// AerialVL (via scripts/prepare_aerialvl.py) has 2 Hz frames with millisecond timestamps.
+TEST(TelemetryImporter, FractionalSecondTimestampsArePreserved)
+{
+    testutil::ScopedTempCwd tmp;
+    writeFile("seq.csv",
+              "num,filename,date,lat,lon,height,Omega,Kappa,Phi1,Phi2\n"
+              "1,av2_0001.JPG,2023-03-18T09:02:43.084,36.5976033333,120.4294850000,277.0,0,0,90,90\n"
+              "2,av2_0002.JPG,2023-03-18T09:02:43.584,36.5976100000,120.4295216667,277.0,0,0,90,90\n"
+              "3,av2_0003.JPG,2023-03-18T09:02:44.0849,36.5976166667,120.4295583333,277.0,0,0,90,90\n"
+              "4,av2_0004.JPG,2023-03-18T09:02:45,36.5976233333,120.4295950000,277.0,0,0,90,90\n");
+    ASSERT_TRUE(importUavVisLocTelemetry("seq.csv", "av").success);
+    std::vector<double> t = loadTelemetryFrameTimes("av");
+    ASSERT_EQ(t.size(), 4u);
+    EXPECT_NEAR(t[0], 0.0, 1e-6);
+    EXPECT_NEAR(t[1], 0.5, 1e-6);    // was 0.0 before the fix (fraction dropped)
+    EXPECT_NEAR(t[2], 1.0009, 1e-6); // any number of fraction digits
+    EXPECT_NEAR(t[3], 1.916, 1e-6);  // a whole-second stamp mixed in still works
+}
+
 TEST(TelemetryImporter, LatLngKeepSubMetrePrecision)
 {
     testutil::ScopedTempCwd tmp;

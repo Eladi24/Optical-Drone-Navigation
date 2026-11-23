@@ -281,5 +281,29 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
         "Videos/dataset_uavvisloc_11.avi",
     });
 
+    // AerialVL transfer test (2026-11-23): the two extracted AerialVL sequences, presented in UAV-VisLoc's layout
+    // by scripts/prepare_aerialvl.py so the FROZEN pipeline (git tag uavvisloc-v1) runs on them unchanged.
+    // av2 = short_trajtr/2023-03-18-16-55-37, av1 = long_trajtr/2023-03-16-18-04-01 (partly dusk). Heading 90
+    // (image-top = east), GSD from a GPS-baseline calibration written as an equivalent AGL
+    // (CSV Files/agl_uavvisloc_av{1,2}.csv). Map: the large AerialVL GeoTIFF (Google 2023, 0.959 m/px).
+    samples.push_back({
+        "uavvisloc_av2", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/av2/drone", "av2", 498,
+        "Datasets/UAV_VisLoc_dataset/av2/av2.csv",
+        "Images/map_clean_aerialvl_large.png",
+        "Datasets/aerialvl_coordinates_range.csv",
+        "aerialvl_large",
+        "Videos/dataset_uavvisloc_av2.avi",
+    });
+    samples.push_back({
+        "uavvisloc_av1", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/av1/drone", "av1", 639,
+        "Datasets/UAV_VisLoc_dataset/av1/av1.csv",
+        "Images/map_clean_aerialvl_large.png",
+        "Datasets/aerialvl_coordinates_range.csv",
+        "aerialvl_large",
+        "Videos/dataset_uavvisloc_av1.avi",
+    });
+
     return samples;
 }
