@@ -209,12 +209,20 @@ def dead_reckon(odo, start=(0.0, 0.0)):
 
 
 # ---------------------------------------------------------------- fusion
-def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT):
+def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT,
+                    path_s=None, half_m=None):
+    """Window = anchors within +-half STILLS of still i, or -- when half_m is given -- within +-half_m METRES of
+    path distance along the dead-reckoned odometry track (path_s, cumulative, no GPS). The still-count window
+    silently changes meaning with the capture rate: +-10 stills is +-800-950 m on UAV-VisLoc but +-34 m on AerialVL
+    (2 Hz), where neighbouring anchors share the same wrong pick and outvote the truth (2026-11-23)."""
     n = len(p)
     o = np.column_stack([ax - p[a_idx, 0], ay - p[a_idx, 1]])
     est = np.full((n, 2), np.nan)
     for i in range(n):
-        c = np.where(np.abs(a_idx - i) <= half)[0]
+        if half_m is not None:
+            c = np.where(np.abs(path_s[a_idx] - path_s[i]) <= half_m)[0]
+        else:
+            c = np.where(np.abs(a_idx - i) <= half)[0]
         if len(c) < min_support:
             continue
         d = np.linalg.norm(o[c][:, None] - o[c][None], axis=2)
@@ -266,7 +274,7 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
 
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
-               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward"):
+               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
@@ -283,7 +291,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
     loess_err = np.hypot(fx - G[a_idx, 0], fy - G[a_idx, 1])
 
     p = dead_reckon(odo)                                   # arbitrary origin: no GT
-    est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree)
+    path_s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(odo, axis=1))])   # odometry path length, no GT
+    est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree, path_s=path_s, half_m=half_m)
     if gate_r > 0:
         est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r, fill=fill)
     cov = ~np.isnan(est[:, 0])
@@ -296,7 +305,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
            "raw": stats(raw_err), "loess": stats(loess_err), "consensus": stats(cons_err),
            "consensus_coverage": float(cov.mean())}
     print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}  "
-          f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, half {half}, "
+          f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, "
+          f"{f'half {half_m:.0f} m (path)' if half_m is not None else f'half {half}'}, "
           f"gate_r {gate_r:.0f}, prior {prior}, fill {fill}]")
     print(f"  VO ok {res['vo_ok_frac']:.0%} | VO step err median {res['vo_step_err_median']:.1f} m | "
           f"anchors within 150 m: {res['anchors_within_150m_frac']:.1%}")
@@ -338,6 +348,9 @@ def main():
     ap.add_argument("--r-agree", type=float, default=R_AGREE, help="consensus agreement radius (m)")
     ap.add_argument("--no-plot", action="store_true")
     ap.add_argument("--half", type=int, default=HALF_WIN, help="consensus window, stills either side")
+    ap.add_argument("--half-m", type=float, default=None,
+                    help="consensus window in METRES of odometry path either side (overrides --half); "
+                         "portable across capture rates. 870 = what --half 10 spans on UAV-VisLoc dev")
     ap.add_argument("--gate-r", type=float, default=0.0,
                     help=">0: keep a still's own anchor when within this many m of consensus, fill gaps")
     ap.add_argument("--prior", choices=("speed", "steplen"), default="speed",
@@ -359,7 +372,7 @@ def main():
 
     results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
                           min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r,
-                          prior=a.prior, fill=a.fill)
+                          prior=a.prior, fill=a.fill, half_m=a.half_m)
                for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):
