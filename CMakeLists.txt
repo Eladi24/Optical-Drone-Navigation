@@ -16,7 +16,9 @@ if(ENABLE_COVERAGE)
 endif()
 
 # OpenCV
-find_package(OpenCV REQUIRED)
+# Minimum supported OpenCV: 4.5 (Ubuntu 22.04 ships 4.5.4, 24.04 ships 4.6 -- CI tests 4.6; this
+# machine has 4.10). Avoid APIs newer than that, e.g. cv::SIFT::getNFeatures() is 4.7+.
+find_package(OpenCV 4.5 REQUIRED)
 
 # libcurl (for HTTP calls to Google APIs)
 find_package(CURL REQUIRED)
@@ -73,6 +75,7 @@ add_library(DroneNavigation
     src/AKAZEFeatureEstimator.cpp
     src/HistogramRetrieval.cpp
     src/OrbRansacMatching.cpp
+    src/VladMath.cpp
     src/SplitPipelineEstimator.cpp
 
     # Visualization & utilities
@@ -103,6 +106,8 @@ if(DRONENAV_ENABLE_ONNX)
                                             src/XFeatMatching.cpp
                                             src/DiskLightGlueMatching.cpp src/DinoDenseMatching.cpp)
     target_link_libraries(DroneNavigation onnxruntime)
+    # PUBLIC so Main/tests see it too; guards the ONNX-only code paths (src/FlightSimulation.cpp).
+    target_compile_definitions(DroneNavigation PUBLIC DRONENAV_HAS_ONNX)
 endif()
 
 # ----- Google Maps + OpenCV sample -----
@@ -125,6 +130,18 @@ target_link_libraries(GroundTruth ${OpenCV_LIBS} ${CURL_LIBRARIES} DroneNavigati
 if(DRONENAV_ENABLE_ONNX)
     set_target_properties(Main GroundTruth PROPERTIES
         BUILD_RPATH ${onnxruntime_dist_SOURCE_DIR}/lib)
+endif()
+
+# ----- Tests (GoogleTest + CTest) -----
+# Regression tests for the project's silent-data bugs and core math (tests/). No datasets or
+# models needed: test maps are procedural, the VLAD parity fixture is a few KB under
+# tests/fixtures/, and model-dependent tests (label local_only) GTEST_SKIP when models/ is absent.
+#   ctest --test-dir build --output-on-failure            (everything)
+#   ctest --test-dir build -L "unit|integration"          (what CI runs)
+option(DRONENAV_BUILD_TESTS "Build the GoogleTest suite (tests/)" ON)
+if(DRONENAV_BUILD_TESTS)
+    enable_testing()
+    add_subdirectory(tests)
 endif()
 
 # Coverage target to generate HTML report with lcov

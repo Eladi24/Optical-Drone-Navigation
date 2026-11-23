@@ -15,6 +15,19 @@
 #include <sstream>
 #include <sys/stat.h>
 
+cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg)
+{
+    // -heading: rotating by the compass heading's negative turns the frame north-up
+    // (UAV-VisLoc Phi1, verified 2026-11-18 by an angle sweep; see processVideoNavigation).
+    cv::Mat rot_matrix = cv::getRotationMatrix2D(centre, -heading_deg, 1.0);
+    rot_matrix.at<double>(0, 2) += take / 2.0 - centre.x;   // crop centre -> output centre
+    rot_matrix.at<double>(1, 2) += take / 2.0 - centre.y;
+    cv::Mat rotated_crop;
+    cv::warpAffine(frame, rotated_crop, rot_matrix, cv::Size(take, take),
+                   cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+    return rotated_crop;
+}
+
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
     const cv::Mat &map,
     double center_lat, double center_lng,
@@ -454,12 +467,7 @@ void processVideoNavigation(
                     const int take = legacy_crop_roi.width;
                     const double heading_deg = (*frame_headings_deg)[frame_idx];
                     const cv::Point2f c(legacy_crop_roi.x + take / 2.0f, legacy_crop_roi.y + take / 2.0f);
-                    cv::Mat rot_matrix = cv::getRotationMatrix2D(c, -heading_deg, 1.0);
-                    rot_matrix.at<double>(0, 2) += take / 2.0 - c.x;   // crop centre -> output centre
-                    rot_matrix.at<double>(1, 2) += take / 2.0 - c.y;
-                    cv::Mat rotated_crop;
-                    cv::warpAffine(frame, rotated_crop, rot_matrix, cv::Size(take, take),
-                                   cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
+                    cv::Mat rotated_crop = headingPrewarpCrop(frame, c, take, heading_deg);
                     cv::resize(rotated_crop, processed_frame,
                                cv::Size(legacy_crop_target_px, legacy_crop_target_px));
                     rotated = true;

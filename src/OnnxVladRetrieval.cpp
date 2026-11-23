@@ -1,5 +1,6 @@
 #include "StageProfiler.hpp"
 #include "OnnxVladRetrieval.hpp"
+#include "VladMath.hpp"
 #include <opencv2/imgproc.hpp>
 #include <algorithm>
 #include <array>
@@ -17,7 +18,6 @@ constexpr int kNumTokens = kGrid * kGrid;  // 256
 constexpr int kDescDim   = 384;
 constexpr float kImageNetMean[3] = {0.485f, 0.456f, 0.406f};  // RGB order
 constexpr float kImageNetStd[3]  = {0.229f, 0.224f, 0.225f};
-constexpr int32_t kVocabMagic = 0x44414C56;  // 'VLAD' little-endian
 
 Ort::SessionOptions makeSessionOptions()
 {
@@ -28,15 +28,7 @@ Ort::SessionOptions makeSessionOptions()
     return opts;
 }
 
-void l2normalize(float* v, int n)
-{
-    double norm = 0.0;
-    for (int i = 0; i < n; ++i) norm += static_cast<double>(v[i]) * v[i];
-    norm = std::sqrt(norm);
-    if (norm > 1e-12) {
-        for (int i = 0; i < n; ++i) v[i] = static_cast<float>(v[i] / norm);
-    }
-}
+using vlad::l2normalize;
 }  // namespace
 
 OnnxVladRetrieval::OnnxVladRetrieval(const std::string& model_path, const std::string& vocab_path)
@@ -49,24 +41,13 @@ OnnxVladRetrieval::OnnxVladRetrieval(const std::string& model_path, const std::s
 
 void OnnxVladRetrieval::loadVocabulary(const std::string& vocab_path)
 {
-    std::ifstream f(vocab_path, std::ios::binary);
-    if (!f) throw std::runtime_error("OnnxVladRetrieval: cannot open vocab file " + vocab_path +
-                                     " (produce it with scripts/export_vlad_vocab.py)");
-    int32_t header[3];
-    f.read(reinterpret_cast<char*>(header), sizeof(header));
-    if (!f || header[0] != kVocabMagic)
-        throw std::runtime_error("OnnxVladRetrieval: bad vocab header in " + vocab_path);
-    k_ = header[1];
-    desc_dim_ = header[2];
-    if (k_ <= 0 || desc_dim_ != kDescDim)
+    vlad::Vocabulary voc = vlad::readVocabulary(vocab_path);  // format + magic checks, row re-normalization
+    if (voc.dim != kDescDim)
         throw std::runtime_error("OnnxVladRetrieval: vocab dim mismatch (expected desc_dim " +
                                  std::to_string(kDescDim) + ")");
-    vocab_.resize(static_cast<size_t>(k_) * desc_dim_);
-    f.read(reinterpret_cast<char*>(vocab_.data()), static_cast<std::streamsize>(vocab_.size() * sizeof(float)));
-    if (!f) throw std::runtime_error("OnnxVladRetrieval: vocab file truncated: " + vocab_path);
-    // Centroids are written already L2-normalized; re-normalize defensively so the
-    // nearest-centroid-by-dot-product step below is exactly nearest-by-L2.
-    for (int c = 0; c < k_; ++c) l2normalize(vocab_.data() + static_cast<size_t>(c) * desc_dim_, desc_dim_);
+    k_ = voc.k;
+    desc_dim_ = voc.dim;
+    vocab_ = std::move(voc.data);
 }
 
 std::vector<std::vector<float>> OnnxVladRetrieval::embedDense(const cv::Mat& image, const cv::Mat& mask)
@@ -118,27 +99,7 @@ std::vector<std::vector<float>> OnnxVladRetrieval::embedDense(const cv::Mat& ima
 
 std::vector<float> OnnxVladRetrieval::vladEncode(const std::vector<std::vector<float>>& patch_descs) const
 {
-    // Accumulate residuals per centroid (mirrors scripts/proto_vlad_retrieval.py's vlad_encode).
-    std::vector<float> V(static_cast<size_t>(k_) * desc_dim_, 0.0f);
-    for (const auto& p : patch_descs) {
-        int best_c = 0;
-        double best_dot = -2.0;
-        for (int c = 0; c < k_; ++c) {
-            const float* cen = vocab_.data() + static_cast<size_t>(c) * desc_dim_;
-            double dot = 0.0;
-            for (int d = 0; d < desc_dim_; ++d) dot += static_cast<double>(p[d]) * cen[d];
-            if (dot > best_dot) { best_dot = dot; best_c = c; }
-        }
-        float* acc = V.data() + static_cast<size_t>(best_c) * desc_dim_;
-        const float* cen = vocab_.data() + static_cast<size_t>(best_c) * desc_dim_;
-        for (int d = 0; d < desc_dim_; ++d) acc[d] += p[d] - cen[d];
-    }
-    // Intra-normalization (L2 per centroid block).
-    for (int c = 0; c < k_; ++c) l2normalize(V.data() + static_cast<size_t>(c) * desc_dim_, desc_dim_);
-    // Signed square-root power-normalization, then global L2.
-    for (float& x : V) x = (x >= 0.0f ? 1.0f : -1.0f) * std::sqrt(std::fabs(x));
-    l2normalize(V.data(), static_cast<int>(V.size()));
-    return V;
+    return vlad::encode(patch_descs, vocab_, k_, desc_dim_);
 }
 
 void OnnxVladRetrieval::buildIndex(const std::vector<ReferenceCrop>& crops)

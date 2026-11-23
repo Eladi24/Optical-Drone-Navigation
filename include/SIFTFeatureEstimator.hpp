@@ -56,6 +56,7 @@ public:
 
 private:
     cv::Ptr<cv::SIFT> sift_detector_;
+    int num_features_;  // kept ourselves: cv::SIFT::getNFeatures() only exists in OpenCV >= 4.7
     cv::Mat           feature_mask_;  // 255=use, 0=exclude; applied only to drone frames
 
     // Geo-referencing scale set via setGeoReference(); 0.0 until then, which
