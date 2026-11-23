@@ -16,7 +16,9 @@ if(ENABLE_COVERAGE)
 endif()
 
 # OpenCV
-find_package(OpenCV REQUIRED)
+# Minimum supported OpenCV: 4.5 (Ubuntu 22.04 ships 4.5.4, 24.04 ships 4.6 -- CI tests 4.6; this
+# machine has 4.10). Avoid APIs newer than that, e.g. cv::SIFT::getNFeatures() is 4.7+.
+find_package(OpenCV 4.5 REQUIRED)
 
 # libcurl (for HTTP calls to Google APIs)
 find_package(CURL REQUIRED)

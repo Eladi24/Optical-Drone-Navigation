@@ -38,6 +38,7 @@ struct MatchTaskData {
 
 SIFTFeatureEstimator::SIFTFeatureEstimator(int num_features, int num_threads)
     : sift_detector_(cv::SIFT::create(num_features))
+    , num_features_(num_features)
     , pool_(static_cast<size_t>(std::max(1, num_threads)))
 {
     pthread_rwlock_init(&cache_rwlock_, nullptr);
@@ -85,7 +86,7 @@ SIFTFeatureEstimator::getCachedFeatures(const cv::Mat& image) const
     // Cache miss — compute descriptors with a thread-local detector
     CachedFeatures entry;
     {
-        auto det = cv::SIFT::create(sift_detector_->getNFeatures());
+        auto det = cv::SIFT::create(num_features_);
         det->detectAndCompute(image, cv::noArray(), entry.keypoints, entry.descriptors);
         // MIN_VALID_KEYPOINTS=150: see ORBFeatureEstimator.cpp -- measured
         // across all 572 of this project's Haifa reference crops with SIFT.
