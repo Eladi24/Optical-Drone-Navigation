@@ -84,3 +84,4 @@ __pycache__/
 scratch_*
 *.log
 
+Images/map_clean_aerialvl_*.png
