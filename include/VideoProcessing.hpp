@@ -20,6 +20,13 @@ constexpr int kReferenceCropMeters = 300;
 // runs don't block forever on cv::waitKey(0) (2026-11-18). Mid-run pauses (space) still wait.
 constexpr int kEndOfRunWindowTimeoutMs = 15000;
 
+// North-up crop for the compass heading pre-warp: rotates the FULL frame by -heading_deg
+// (degrees clockwise from north, UAV-VisLoc Phi1) about `centre` and returns the
+// take x take square centred there; pixels the camera never saw are black. Extracted from
+// processVideoNavigation() (2026-11-23) so the sign convention is unit-tested
+// (tests/test_prewarp.cpp).
+cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg);
+
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
     const cv::Mat& map,
     double center_lat, double center_lng,

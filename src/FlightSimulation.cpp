@@ -21,11 +21,14 @@
 #include "SplitPipelineEstimator.hpp"
 #include "HistogramRetrieval.hpp"
 #include "OrbRansacMatching.hpp"
+#ifdef DRONENAV_HAS_ONNX
 #include "OnnxDeitRetrieval.hpp"
 #include "OnnxVladRetrieval.hpp"
 #include "XFeatMatching.hpp"
 #include "DiskLightGlueMatching.hpp"
 #include "DinoDenseMatching.hpp"
+#endif
+#include <stdexcept>
 #include "KalmanFilter.hpp"
 #include "Visualization.hpp"
 #include "CoordinateUtils.hpp"
@@ -50,6 +53,7 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                 std::make_unique<OrbRansacMatching>(500),
                 "split");
 
+#ifdef DRONENAV_HAS_ONNX
         // STRATEGY.md Phase 2 learned retrieval: swaps ONLY the retrieval
         // stage (classical histogram -> frozen DeiT-Tiny/ONNX embeddings),
         // matching stage held at the same OrbRansacMatching as "split" so
@@ -175,6 +179,25 @@ std::unique_ptr<IPositionEstimator> createPositionEstimator(PositionAlgorithm al
                                                     "models/vlad_vocab_finetuned_k64.bin"),
                 std::make_unique<OrbRansacMatching>(500),
                 "split_vlad_orb");
+
+#else
+        // Built with -DDRONENAV_ENABLE_ONNX=OFF: the learned stages aren't compiled in. Fail loudly --
+        // falling through to `default:` would silently run HybridEstimator under a split_* name.
+        case PositionAlgorithm::SPLIT_LEARNED_RETRIEVAL:
+        case PositionAlgorithm::SPLIT_LEARNED_MATCH_XFEAT:
+        case PositionAlgorithm::SPLIT_LEARNED:
+        case PositionAlgorithm::SPLIT_LEARNED_MATCH_DISK_LIGHTGLUE:
+        case PositionAlgorithm::SPLIT_LEARNED_DISK:
+        case PositionAlgorithm::SPLIT_FINETUNED_DISK:
+        case PositionAlgorithm::SPLIT_FINETUNED_DINO:
+        case PositionAlgorithm::SPLIT_FINETUNED_DISK_REFINED:
+        case PositionAlgorithm::SPLIT_VLAD_DISK:
+        case PositionAlgorithm::SPLIT_VLAD_DISK_K20:
+        case PositionAlgorithm::SPLIT_VLAD_XFEAT:
+        case PositionAlgorithm::SPLIT_VLAD_ORB:
+            throw std::runtime_error("createPositionEstimator: this learned split_* algorithm needs ONNX "
+                                     "Runtime; rebuild with -DDRONENAV_ENABLE_ONNX=ON");
+#endif
 
         // OPTICAL_FLOW is handled directly in VideoProcessing.cpp (it needs
         // OpticalFlowTracker, which has a different construction path).
