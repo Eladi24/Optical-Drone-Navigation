@@ -15,6 +15,18 @@
 #include <sstream>
 #include <sys/stat.h>
 
+ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame_height_px, double frame_gsd,
+                                                   int frozen_crop_meters, int frozen_spacing_meters)
+{
+    const double footprint_m = std::min(frame_width_px, frame_height_px) * frame_gsd;
+    if (!(footprint_m > 0.0) || footprint_m >= frozen_crop_meters)
+        return {frozen_crop_meters, frozen_spacing_meters};
+    const int crop = std::max(1, static_cast<int>(std::lround(footprint_m)));
+    const int spacing = std::max(1, static_cast<int>(std::lround(
+        static_cast<double>(frozen_spacing_meters) * crop / frozen_crop_meters)));
+    return {crop, spacing};
+}
+
 cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg)
 {
     // -heading: rotating by the compass heading's negative turns the frame north-up
@@ -129,7 +141,8 @@ void processVideoNavigation(
     const std::vector<std::pair<double, double>> *ground_truth_path,
     bool use_particle_filter,
     int max_frames_to_process,
-    const std::vector<double> *frame_headings_deg)
+    const std::vector<double> *frame_headings_deg,
+    int reference_crop_meters)
 {
     // =========================================================================
     // INITIALIZATION
@@ -212,7 +225,7 @@ void processVideoNavigation(
         // target below -- silently stretching every real-world shape and
         // corrupting the geometry ORB/SIFT rely on. Clamp both to the SAME
         // value (bounded by the smaller frame dimension) instead.
-        int desired_px = static_cast<int>(std::round(kReferenceCropMeters / video_frame_gsd));
+        int desired_px = static_cast<int>(std::round(reference_crop_meters / video_frame_gsd));
         int take = std::max(20, std::min(desired_px, std::min(video_width, video_height)));
         int sx = video_width  / 2 - take / 2 + x_offset;
         int sy = video_height / 2 - take / 2 + y_offset;
@@ -252,6 +265,7 @@ void processVideoNavigation(
     } else {
         estimator = createPositionEstimator(algorithm);
         algorithm_name = estimator->getName();
+        if (reference_crop_meters != kReferenceCropMeters) algorithm_name += "_fp";  // footprint-matched crops
 
         std::cout << "   Algorithm: " << algorithm_name << " + Kalman Filter" << std::endl;
         std::cout << "   Reference crops: " << reference_crops.size() << std::endl;
@@ -269,6 +283,7 @@ void processVideoNavigation(
         }
         estimator->setFeatureMask(aligned_mask);
         estimator->setGeoReference(mpp, meters_per_degree_lat, meters_per_degree_lng);
+        estimator->setReferenceCropMeters(reference_crop_meters);
 
         estimator->precompute(reference_crops);
     }

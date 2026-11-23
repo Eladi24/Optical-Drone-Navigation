@@ -319,7 +319,8 @@ PositionEstimate SIFTFeatureEstimator::estimatePosition(
         double offset_m_x  = offset_px_x * mpp_;
         double offset_m_y  = offset_px_y * mpp_;
 
-        if (offset_m_x <= kReferenceCropMeters * 0.75 && offset_m_y <= kReferenceCropMeters * 0.75) {
+        const double crop_m = reference_crop_meters_ > 0 ? reference_crop_meters_ : kReferenceCropMeters;
+        if (offset_m_x <= crop_m * 0.75 && offset_m_y <= crop_m * 0.75) {
             refined_position = CoordinateUtils::pixelToLatLng(
                 static_cast<int>(dst[0].x), static_cast<int>(dst[0].y),
                 reference_crops[best_idx].coordinates.first,

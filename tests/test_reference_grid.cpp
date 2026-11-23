@@ -82,3 +82,39 @@ TEST(ReferenceGrid, CropCentresMapBackToTheirCoordinates)
         EXPECT_LE(px.y, g.map.rows);
     }
 }
+
+// Footprint-matched crops (opt-in, 2026-11-23). Must be EXACTLY the frozen geometry whenever the frame's short side
+// covers >= 300 m (so frozen flights are untouched), and keep the frozen crop/spacing ratio below that.
+TEST(FootprintMatchedGrid, NoOpWhenFootprintCoversTheFrozenCrop)
+{
+    for (double gsd : {0.113, 0.132, 0.186, 1.0}) {  // UAV-VisLoc 03 / 04 / 11-like, and a coarse camera
+        ReferenceGridGeometry g = footprintMatchedCropGeometry(3976, 2656, gsd);
+        if (2656 * gsd < kReferenceCropMeters) continue;
+        EXPECT_EQ(g.crop_meters, kReferenceCropMeters) << "gsd " << gsd;
+        EXPECT_EQ(g.spacing_meters, 200) << "gsd " << gsd;
+    }
+    ReferenceGridGeometry exact = footprintMatchedCropGeometry(1000, 600, 0.5);  // exactly 300 m
+    EXPECT_EQ(exact.crop_meters, 300);
+    EXPECT_EQ(exact.spacing_meters, 200);
+}
+
+TEST(FootprintMatchedGrid, ShrinksToTheFootprintAndKeepsTheRatio)
+{
+    ReferenceGridGeometry av2 = footprintMatchedCropGeometry(2048, 1536, 0.130487);  // AerialVL av2: 200.4 m
+    EXPECT_EQ(av2.crop_meters, 200);
+    EXPECT_EQ(av2.spacing_meters, 133);
+    ReferenceGridGeometry f10 = footprintMatchedCropGeometry(3000, 2000, 0.0945);   // UAV-VisLoc 10-like: 189 m
+    EXPECT_EQ(f10.crop_meters, 189);
+    EXPECT_EQ(f10.spacing_meters, 126);
+    for (const auto& g : {av2, f10}) {
+        EXPECT_LT(g.spacing_meters, g.crop_meters);  // crops overlap -> no gaps between neighbouring crops
+        EXPECT_NEAR(static_cast<double>(g.spacing_meters) / g.crop_meters, 200.0 / 300.0, 0.01);
+    }
+}
+
+TEST(FootprintMatchedGrid, DegenerateInputsFallBackToFrozen)
+{
+    ReferenceGridGeometry g = footprintMatchedCropGeometry(0, 0, 0.1);
+    EXPECT_EQ(g.crop_meters, kReferenceCropMeters);
+    EXPECT_EQ(g.spacing_meters, 200);
+}

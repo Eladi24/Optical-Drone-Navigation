@@ -25,6 +25,20 @@ constexpr int kEndOfRunWindowTimeoutMs = 15000;
 // take x take square centred there; pixels the camera never saw are black. Extracted from
 // processVideoNavigation() (2026-11-23) so the sign convention is unit-tested
 // (tests/test_prewarp.cpp).
+// Footprint-matched reference-crop geometry (2026-11-23, opt-in via DRONENAV_FOOTPRINT_CROPS=1).
+// The frozen grid uses 300 m crops every 200 m, implicitly assuming the drone frame's short side covers >= 300 m.
+// When it covers less (AerialVL ~180-200 m; UAV-VisLoc 01/02/05/06/10 at 189-262 m), the GSD-normalised drone crop is
+// clamped to the frame (so it shows LESS ground than every reference crop), which cost AerialVL retrieval ~10 points
+// of R@1. Rule: crop = min(frozen crop, short-side footprint); spacing keeps the frozen ratio (200/300), so crops keep
+// the same overlap and no gaps open between them. Exactly the frozen values whenever the footprint >= 300 m.
+struct ReferenceGridGeometry {
+    int crop_meters;
+    int spacing_meters;
+};
+ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame_height_px, double frame_gsd,
+                                                   int frozen_crop_meters = kReferenceCropMeters,
+                                                   int frozen_spacing_meters = 200);
+
 cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg);
 
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
@@ -121,5 +135,9 @@ void processVideoNavigation(
     const std::vector<std::pair<double, double>>* ground_truth_path = nullptr,
     bool use_particle_filter = false,
     int max_frames_to_process = 0,
-    const std::vector<double>* frame_headings_deg = nullptr
+    const std::vector<double>* frame_headings_deg = nullptr,
+    // Side (m) of the reference crops in reference_crops (see footprintMatchedCropGeometry). Sizes the drone-side
+    // crop and the estimators' projection check; when it differs from kReferenceCropMeters the estimator name in
+    // the output files gets an "_fp" suffix so frozen results are never overwritten.
+    int reference_crop_meters = kReferenceCropMeters
 );

@@ -295,16 +295,17 @@ void runReferenceMatchingPipeline(
     int grid_spacing_meters = 50,
     int start_frame_idx_override = -1,
     bool use_particle_filter = false,
-    const std::vector<double>* frame_headings_deg = nullptr)
+    const std::vector<double>* frame_headings_deg = nullptr,
+    int reference_crop_meters = kReferenceCropMeters)
 {
     // ------------------------------------------------------------------
     // Reference crop grid for ORB/SIFT/Hybrid
     // ------------------------------------------------------------------
     std::cout << "Generating reference crop grid (" << grid_spacing_meters << " m spacing, "
-              << kReferenceCropMeters << " m crops)..." << std::endl;
+              << reference_crop_meters << " m crops)..." << std::endl;
     std::vector<ReferenceCrop> crops = generateReferenceCropsGrid(
         ref_map, center_lat, center_lng, center_x, center_y,
-        mpp, m_per_deg_lat, m_per_deg_lng, grid_spacing_meters, kReferenceCropMeters);
+        mpp, m_per_deg_lat, m_per_deg_lng, grid_spacing_meters, reference_crop_meters);
 
     // ------------------------------------------------------------------
     // Starting position.
@@ -402,7 +403,8 @@ void runReferenceMatchingPipeline(
         gt_path.empty() ? nullptr : &gt_path,
         use_particle_filter,
         /*max_frames_to_process=*/0,
-        frame_headings_deg);
+        frame_headings_deg,
+        reference_crop_meters);
 }
 
 // Runs the full video-navigation pipeline for one Haifa sample: preprocessing
@@ -689,12 +691,21 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
     // of thousands of reference crops -- 200m keeps the crop count in the
     // same rough ballpark as Haifa's while still giving ORB/SIFT/Hybrid a
     // dense enough search grid.
+    // Footprint-matched reference crops (opt-in, 2026-11-23; see footprintMatchedCropGeometry). Frozen default:
+    // 300 m crops every 200 m. A no-op whenever the frame's short side covers >= 300 m.
+    ReferenceGridGeometry grid_geom{kReferenceCropMeters, 200};
+    if (const char* fp = std::getenv("DRONENAV_FOOTPRINT_CROPS"); fp && std::string(fp) == "1") {
+        grid_geom = footprintMatchedCropGeometry(meta.width, meta.height, video_frame_gsd);
+        std::cout << "  Footprint-matched crops ON: short-side footprint "
+                  << std::min(meta.width, meta.height) * video_frame_gsd << " m -> crop " << grid_geom.crop_meters
+                  << " m, spacing " << grid_geom.spacing_meters << " m" << std::endl;
+    }
     runReferenceMatchingPipeline(
         cfg.video_path, cfg.location_name, cfg.sample_name,
         ref_map, center_lat, center_lng, ref_map.cols / 2, ref_map.rows / 2,
         mpp, m_per_deg_lat, m_per_deg_lng,
         video_frame_gsd, algorithm, feature_mask,
-        /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/200,
+        /*frame_skip=*/1, &frame_times_sec, /*grid_spacing_meters=*/grid_geom.spacing_meters,
         /*start_frame_idx_override=*/-1,
         // Restored to the Kalman baseline (was TEMPly true for A/B testing
         // ParticleFilter vs DroneKalmanFilter -- see CLAUDE.md Investigation
@@ -703,7 +714,8 @@ void runDatasetPipelineForSample(const DatasetSampleConfig& cfg,
         // path specifically; leaving this on the particle filter would
         // measure a different, already-characterized code path instead.
         /*use_particle_filter=*/false,
-        frame_headings_deg.empty() ? nullptr : &frame_headings_deg);
+        frame_headings_deg.empty() ? nullptr : &frame_headings_deg,
+        grid_geom.crop_meters);
 }
 
 int main(int argc, char **argv)

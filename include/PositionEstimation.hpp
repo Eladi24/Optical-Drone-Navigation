@@ -73,6 +73,12 @@ public:
                                   double /*meters_per_degree_lat*/,
                                   double /*meters_per_degree_lng*/) {}
 
+    // Real-world side (m) of the reference crops in use. Default (never called, or 0) =
+    // kReferenceCropMeters (300). Estimators that reject homography projections landing far outside
+    // the winning crop (offset > 0.75 x crop side) scale that check with it. Footprint-matched crops,
+    // 2026-11-23: see footprintMatchedCropGeometry() in VideoProcessing.hpp.
+    virtual void setReferenceCropMeters(int /*meters*/) {}
+
     virtual PositionEstimate estimatePosition(
         const cv::Mat& drone_view,
         const std::vector<ReferenceCrop>& reference_crops,

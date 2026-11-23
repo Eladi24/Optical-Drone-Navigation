@@ -39,6 +39,8 @@ public:
 
     void setFeatureMask(const cv::Mat& mask) override { feature_mask_ = mask; }
 
+    void setReferenceCropMeters(int meters) override { reference_crop_meters_ = meters; }
+
     void setGeoReference(double mpp, double meters_per_degree_lat,
                           double meters_per_degree_lng) override {
         mpp_ = mpp;
@@ -63,6 +65,7 @@ private:
     // also serves as the guard that skips homography-based position
     // refinement if it was never called (see estimatePosition()).
     double mpp_ = 0.0;
+    int    reference_crop_meters_ = 0;  // 0 = kReferenceCropMeters; see setReferenceCropMeters()
     double meters_per_degree_lat_ = 0.0;
     double meters_per_degree_lng_ = 0.0;
 

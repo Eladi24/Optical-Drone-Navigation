@@ -423,7 +423,8 @@ PositionEstimate ORBFeatureEstimator::estimatePosition(
         // homography rather than trusting an offset larger than the crop the
         // match was actually verified against (0.75x its real-world size,
         // not an arbitrary new constant).
-        if (offset_m_x <= kReferenceCropMeters * 0.75 && offset_m_y <= kReferenceCropMeters * 0.75) {
+        const double crop_m = reference_crop_meters_ > 0 ? reference_crop_meters_ : kReferenceCropMeters;
+        if (offset_m_x <= crop_m * 0.75 && offset_m_y <= crop_m * 0.75) {
             refined_position = CoordinateUtils::pixelToLatLng(
                 static_cast<int>(dst[0].x), static_cast<int>(dst[0].y),
                 reference_crops[best_idx].coordinates.first,
