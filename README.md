@@ -1,5 +1,7 @@
 # Optical Drone Navigation
 
+[![CI](https://github.com/Eladi24/Optical-Drone-Navigation/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Eladi24/Optical-Drone-Navigation/actions/workflows/ci.yml)
+
 A GPS-denied drone localization system written in C++. It estimates a drone's position from its
 downward-looking camera, by matching camera frames against satellite reference imagery. No GPS is
 used; the only other inputs are the standard non-GNSS sensors a drone already carries (altitude,
