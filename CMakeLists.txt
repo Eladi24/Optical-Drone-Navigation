@@ -80,6 +80,7 @@ add_library(DroneNavigation
 
     # Visualization & utilities
     src/Visualization.cpp
+    src/NavigationView.cpp
     src/CoordinateUtils.cpp
     src/MapUtils.cpp
     src/KalmanFilter.cpp

@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <chrono>
 #include "VideoProcessing.hpp"
+#include "NavigationView.hpp"
 #include "CoordinateUtils.hpp"
 #include "Visualization.hpp"
 #include "EdgeProcessor.hpp"
@@ -354,7 +355,19 @@ void processVideoNavigation(
     // =========================================================================
     cv::namedWindow("Video Navigation", cv::WINDOW_NORMAL);
     cv::namedWindow("Video Frame",      cv::WINDOW_NORMAL);
-    cv::resizeWindow("Video Navigation", 1200, 800);
+    const NavigationView nav_view(
+        reference_map,
+        [&](double lat, double lng) {
+            return CoordinateUtils::latLngToPixel(lat, lng, center_lat, center_lng, center_x, center_y, mpp,
+                                                  meters_per_degree_lat, meters_per_degree_lng);
+        },
+        ground_truth_path, mpp);
+    {   // open the window at the view's own aspect ratio (sidebar + panels), at most 1800 x 900
+        const cv::Mat probe = nav_view.render({}, {}, {}, initial_position);
+        const double cols = probe.cols + std::max(360, static_cast<int>(probe.cols * 0.16));
+        const double k = std::min(1800.0 / cols, 900.0 / probe.rows);
+        cv::resizeWindow("Video Navigation", static_cast<int>(cols * k), static_cast<int>(probe.rows * k));
+    }
 
     mkdir("Videos",    0755);
     mkdir("CSV Files", 0755);
@@ -364,11 +377,18 @@ void processVideoNavigation(
     // Navigation video is opt-in (DRONENAV_SAVE_VIDEO=1): 0.04-0.5 GB per run,
     // and run videos aren't kept until results are good. The CSV is the record.
     cv::VideoWriter video_writer;
+    // Frame size keeps the display's aspect ratio (sidebar + NavigationView panels), 1800 px wide.
+    cv::Size video_size(1200, 800);
+    {
+        const cv::Mat probe = nav_view.render({}, {}, {}, initial_position);
+        const int cols = probe.cols + std::max(360, static_cast<int>(probe.cols * 0.16));
+        video_size = cv::Size(1800, std::max(2, static_cast<int>(std::lround(1800.0 * probe.rows / cols)) & ~1));
+    }
     if (std::getenv("DRONENAV_SAVE_VIDEO") != nullptr) {
         video_writer.open(output_video_path,
                           cv::VideoWriter::fourcc('M','J','P','G'),
                           fps / frame_skip,
-                          cv::Size(1200, 800), true);
+                          video_size, true);
     } else {
         std::cout << "   Navigation video not saved (set DRONENAV_SAVE_VIDEO=1 to save it)." << std::endl;
     }
@@ -769,126 +789,9 @@ void processVideoNavigation(
         // =====================================================================
         // VISUALIZATION
         // =====================================================================
-        cv::Mat display_map = reference_map.clone();
-
-        // Draw starting point
-        if (initial_position.first != 0.0 && initial_position.second != 0.0) {
-            cv::Point sp = CoordinateUtils::latLngToPixel(
-                initial_position.first, initial_position.second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::circle(display_map, sp, 12, cv::Scalar(203, 105, 255), -1);
-            cv::circle(display_map, sp, 14, cv::Scalar(0, 0, 0), 2);
-            cv::putText(display_map, "START", cv::Point(sp.x + 15, sp.y),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(203, 105, 255), 2);
-        }
-
-        // Draw raw path (thin blue)
-        for (size_t i = 1; i < raw_positions.size(); ++i) {
-            if (raw_positions[i].first == 0.0 || raw_positions[i-1].first == 0.0) continue;
-            cv::Point p1 = CoordinateUtils::latLngToPixel(
-                raw_positions[i-1].first, raw_positions[i-1].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::Point p2 = CoordinateUtils::latLngToPixel(
-                raw_positions[i].first, raw_positions[i].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::line(display_map, p1, p2, cv::Scalar(255, 0, 0), 1);
-        }
-
-        // Draw ground-truth path (thick orange) -- distinct from raw (blue)
-        // and filtered (green/yellow/red by confidence) so actual-vs-
-        // estimated drift is visible live, not just after the fact via
-        // evaluate_ground_truth.py. No-op (nothing drawn) when
-        // ground_truth_path is null, e.g. Haifa Sample 3 / any sample
-        // without ground truth yet.
-        for (size_t i = 1; i < gt_positions_drawn.size(); ++i) {
-            if (gt_positions_drawn[i].first == 0.0 || gt_positions_drawn[i-1].first == 0.0) continue;
-            cv::Point p1 = CoordinateUtils::latLngToPixel(
-                gt_positions_drawn[i-1].first, gt_positions_drawn[i-1].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::Point p2 = CoordinateUtils::latLngToPixel(
-                gt_positions_drawn[i].first, gt_positions_drawn[i].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::line(display_map, p1, p2, cv::Scalar(0, 140, 255), 2);
-        }
-
-        // Draw filtered path (thick, confidence-colour-coded)
-        for (size_t i = 1; i < filtered_positions.size(); ++i) {
-            cv::Point p1 = CoordinateUtils::latLngToPixel(
-                filtered_positions[i-1].first, filtered_positions[i-1].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::Point p2 = CoordinateUtils::latLngToPixel(
-                filtered_positions[i].first, filtered_positions[i].second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            double c = confidences[i];
-            cv::Scalar col = (c > 0.7) ? cv::Scalar(0,255,0)
-                           : (c > 0.5) ? cv::Scalar(0,255,255)
-                                       : cv::Scalar(0,0,255);
-            cv::line(display_map, p1, p2, col, 2);
-        }
-
-        // Draw current position
-        if (!filtered_positions.empty()) {
-            cv::Point cp = CoordinateUtils::latLngToPixel(
-                filtered_position.first, filtered_position.second,
-                center_lat, center_lng, center_x, center_y, mpp,
-                meters_per_degree_lat, meters_per_degree_lng);
-            cv::circle(display_map, cp, 8,  cv::Scalar(0,255,255), -1);
-            cv::circle(display_map, cp, 10, cv::Scalar(0,0,0),     2);
-        }
-
-        // Overlay text
-        std::ostringstream info;
-        info << "Frame: " << frame_idx << "/" << total_frames
-             << "  t=" << std::fixed << std::setprecision(1) << time_sec
-             << "s  Conf=" << std::setprecision(3) << confidence
-             << "  Innov=" << std::setprecision(1) << innovation << "m";
-        cv::putText(display_map, info.str(),
-                    cv::Point(10,30), cv::FONT_HERSHEY_SIMPLEX, 0.65,
-                    cv::Scalar(255,255,255), 2);
-
-        std::ostringstream pos_info;
-        pos_info << "Pos: " << std::fixed << std::setprecision(6)
-                 << filtered_position.first << ", " << filtered_position.second;
-        cv::putText(display_map, pos_info.str(),
-                    cv::Point(10,60), cv::FONT_HERSHEY_SIMPLEX, 0.65,
-                    cv::Scalar(255,255,255), 2);
-
-        if (outlier_rejected)
-            cv::putText(display_map, "OUTLIER REJECTED",
-                        cv::Point(10,90), cv::FONT_HERSHEY_SIMPLEX, 0.65,
-                        cv::Scalar(0,0,255), 2);
-        if (consecutive_rejections > 3)
-            cv::putText(display_map,
-                        "WARNING: filter drifting (" + std::to_string(consecutive_rejections) + ")",
-                        cv::Point(10,120), cv::FONT_HERSHEY_SIMPLEX, 0.65,
-                        cv::Scalar(0,140,255), 2);
-
-        if (use_optical_flow) {
-            // Show tracked point count
-            auto* tracker = dynamic_cast<OpticalFlowTracker*>(estimator.get());
-            if (tracker) {
-                std::string pt_info = "Tracked pts: " + std::to_string(tracker->trackedPointCount());
-                cv::putText(display_map, pt_info,
-                            cv::Point(10, 150), cv::FONT_HERSHEY_SIMPLEX, 0.55,
-                            cv::Scalar(200, 255, 200), 1);
-            }
-        }
-
-        if (ground_truth_path) {
-            cv::putText(display_map, "-- Ground Truth", cv::Point(10, 180),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 140, 255), 2);
-            cv::putText(display_map, "-- Raw Estimate", cv::Point(10, 205),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(255, 0, 0), 2);
-            cv::putText(display_map, "-- Filtered Estimate", cv::Point(10, 230),
-                        cv::FONT_HERSHEY_SIMPLEX, 0.55, cv::Scalar(0, 255, 0), 2);
-        }
+        // Three synchronised panels [truth | estimate | overlay + error whiskers] on a dimmed crop of the map
+        // (NavigationView.hpp). Frame / confidence / outlier status live in the sidebar below.
+        cv::Mat display_map = nav_view.render(gt_positions_drawn, raw_positions, filtered_positions, initial_position);
 
         // Progress sidebar to the LEFT of the map -- the "Frame: X/total" text
         // overlaid on the map itself is unreadably small once a multi-thousand-
@@ -947,6 +850,11 @@ void processVideoNavigation(
             if (consecutive_rejections > 3)
                 put("FILTER DRIFTING (" + std::to_string(consecutive_rejections) + ")",
                     0.7 * s, cv::Scalar(0, 140, 255), 2, int(45 * s));
+            if (use_optical_flow) {
+                if (auto* tracker = dynamic_cast<OpticalFlowTracker*>(estimator.get()))
+                    put("tracked pts " + std::to_string(tracker->trackedPointCount()), 0.7 * s,
+                        cv::Scalar(200, 255, 200), 2, int(45 * s));
+            }
 
             cv::hconcat(std::vector<cv::Mat>{sidebar, display_map}, display_map);
         }
@@ -959,7 +867,7 @@ void processVideoNavigation(
 
         if (video_writer.isOpened()) {
             cv::Mat out;
-            cv::resize(display_map, out, cv::Size(1200, 800));
+            cv::resize(display_map, out, video_size, 0, 0, cv::INTER_AREA);
             video_writer.write(out);
         }
 

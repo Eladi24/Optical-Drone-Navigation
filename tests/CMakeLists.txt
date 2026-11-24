@@ -32,7 +32,8 @@ dronenav_add_test(test_unit unit
     test_vlad.cpp
     test_prewarp.cpp
     test_kalman.cpp
-    test_thread_pool.cpp)
+    test_thread_pool.cpp
+    test_navigation_view.cpp)
 
 dronenav_add_test(test_integration integration
     test_split_pipeline.cpp)
