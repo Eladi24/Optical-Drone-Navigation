@@ -210,11 +210,18 @@ def dead_reckon(odo, start=(0.0, 0.0)):
 
 # ---------------------------------------------------------------- fusion
 def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT,
-                    path_s=None, half_m=None):
+                    path_s=None, half_m=None, offset_model="mean"):
     """Window = anchors within +-half STILLS of still i, or -- when half_m is given -- within +-half_m METRES of
     path distance along the dead-reckoned odometry track (path_s, cumulative, no GPS). The still-count window
     silently changes meaning with the capture rate: +-10 stills is +-800-950 m on UAV-VisLoc but +-34 m on AerialVL
-    (2 Hz), where neighbouring anchors share the same wrong pick and outvote the truth (2026-11-23)."""
+    (2 Hz), where neighbouring anchors share the same wrong pick and outvote the truth (2026-11-23).
+
+    offset_model (2026-11-24, INVESTIGATION_LOG "Fusion-Tail Diagnostic"): how the winning cluster's offsets become
+    still i's offset. "mean" (default, unchanged): their plain mean. "loclin": a tricube-weighted local-linear fit of
+    the offsets against odometry path distance, evaluated AT still i -- the flat mean cannot follow an odometry track
+    that bends inside the window (median bend 135-513 m on 01/08/av1 vs 14-33 m anchor noise). Kernel half-width =
+    the existing window (no new parameter). One-sided clusters: the line is extrapolated no further than the members'
+    own span, else the nearest member's offset is held (see _local_linear_offset)."""
     n = len(p)
     o = np.column_stack([ax - p[a_idx, 0], ay - p[a_idx, 1]])
     est = np.full((n, 2), np.nan)
@@ -229,8 +236,33 @@ def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_suppor
         votes = (d <= r_agree).sum(axis=1)
         b = int(np.argmax(votes))
         if votes[b] >= min_support:
-            est[i] = p[i] + o[c[d[b] <= r_agree]].mean(axis=0)
+            members = c[d[b] <= r_agree]
+            if offset_model == "mean":
+                est[i] = p[i] + o[members].mean(axis=0)
+            else:
+                est[i] = p[i] + _local_linear_offset(o[members], path_s[a_idx[members]] - path_s[i],
+                                                     half_m if half_m is not None
+                                                     else np.abs(path_s[a_idx[c]] - path_s[i]).max() + 1.0)
     return est
+
+
+def _local_linear_offset(off, ds, h):
+    """Offset at ds = 0 from members' offsets `off` [m, 2] at signed path distances `ds` [m] (see local_consensus).
+    Tricube-weighted (half-width h) least-squares line, evaluated at ds = 0. Most drift stills have a ONE-SIDED cluster
+    (01 88%, 08 81%, av1 63%), so the line is also used to extrapolate -- but never further than the members' own span
+    (gap from i to the nearest member <= span of the members); beyond that, the nearest member's offset is held."""
+    w = np.clip(1.0 - (np.abs(ds) / h) ** 3, 0.0, None) ** 3
+    w = np.where(w > 1e-9, w, 1e-9)
+    if len(ds) >= 3:
+        span = ds.max() - ds.min()
+        gap = 0.0 if ds.min() < 0.0 < ds.max() else np.abs(ds).min()
+        if gap <= span:
+            X = np.column_stack([np.ones_like(ds), ds])
+            XtW = X.T * w
+            A = XtW @ X
+            if abs(np.linalg.det(A)) >= 1e-9:
+                return np.linalg.solve(A, XtW @ off)[0]   # intercept = offset at still i
+    return off[np.argmin(np.abs(ds))]
 
 
 # ---------------------------------------------------------------- evaluation
@@ -274,7 +306,7 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
 
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
-               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None):
+               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="mean"):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
@@ -292,7 +324,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
 
     p = dead_reckon(odo)                                   # arbitrary origin: no GT
     path_s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(odo, axis=1))])   # odometry path length, no GT
-    est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree, path_s=path_s, half_m=half_m)
+    est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree, path_s=path_s, half_m=half_m,
+                          offset_model=offset_model)
     if gate_r > 0:
         est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r, fill=fill)
     cov = ~np.isnan(est[:, 0])
@@ -307,7 +340,8 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
     print(f"\n=== flight {flight} ({estimator}) stills={len(G)}  altitude: {S['alt_source']}  "
           f"[min_inliers {min_inliers}: {keep.sum()}/{keep.size} anchors kept, r_agree {r_agree:.0f} m, "
           f"{f'half {half_m:.0f} m (path)' if half_m is not None else f'half {half}'}, "
-          f"gate_r {gate_r:.0f}, prior {prior}, fill {fill}]")
+          f"gate_r {gate_r:.0f}, prior {prior}, fill {fill}"
+          f"{', offset ' + offset_model if offset_model != 'mean' else ''}]")
     print(f"  VO ok {res['vo_ok_frac']:.0%} | VO step err median {res['vo_step_err_median']:.1f} m | "
           f"anchors within 150 m: {res['anchors_within_150m_frac']:.1%}")
     print(fmt("raw anchors", res["raw"]))
@@ -357,6 +391,9 @@ def main():
                     help="weak prior for failed VO pairs: recent speed*dt (original) or recent step length")
     ap.add_argument("--fill", choices=("forward", "bridge"), default="forward",
                     help="with --gate-r: fill gaps from the nearest covered still, or bridge from both sides")
+    ap.add_argument("--offset-model", choices=("mean", "loclin"), default="mean",
+                    help="consensus offset: mean of the winning cluster (default) or a local-linear fit along the "
+                         "odometry path evaluated at the still (2026-11-24, see local_consensus)")
     a = ap.parse_args()
     flights = a.flights.split(",")
     if a.oracle and set(flights) & set(HELD_OUT):
@@ -372,7 +409,7 @@ def main():
 
     results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
                           min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r,
-                          prior=a.prior, fill=a.fill, half_m=a.half_m)
+                          prior=a.prior, fill=a.fill, half_m=a.half_m, offset_model=a.offset_model)
                for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):

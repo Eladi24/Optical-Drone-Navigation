@@ -47,6 +47,7 @@ FLIGHTS = {
 }
 MIN_INL, GATE_R, PRIOR = 16, 100.0, "steplen"
 TAIL_M = 100.0
+OFFSET_MODEL = "mean"   # --offset-model loclin re-runs the decomposition under the local-linear consensus
 SOURCES = ("anchor", "consensus", "bridge", "one-sided")
 
 
@@ -61,7 +62,7 @@ def analyse(flight, estimator, win, calib):
     path_s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(odo, axis=1))])
     half = win.get("half", sof.HALF_WIN)
     half_m = win.get("half_m")
-    cons = sof.local_consensus(p, a_idx, ax, ay, half=half, path_s=path_s, half_m=half_m)
+    cons = sof.local_consensus(p, a_idx, ax, ay, half=half, path_s=path_s, half_m=half_m, offset_model=OFFSET_MODEL)
     fused = sof.gate_and_fill(cons, p, a_idx, ax, ay, n, GATE_R, fill="bridge")
     err = np.linalg.norm(fused - G, axis=1)
 
@@ -167,6 +168,12 @@ def analyse(flight, estimator, win, calib):
 
 
 def main():
+    global OFFSET_MODEL, OUT
+    if "--offset-model" in sys.argv:
+        OFFSET_MODEL = sys.argv[sys.argv.index("--offset-model") + 1]
+        assert OFFSET_MODEL in ("mean", "loclin"), OFFSET_MODEL
+        if OFFSET_MODEL != "mean":
+            OUT = OUT.parent / f"{OUT.name}_{OFFSET_MODEL}"
     assert not (set(FLIGHTS) & HELD_OUT), "held-out flights are not part of the design set"
     OUT.mkdir(parents=True, exist_ok=True)
     calib = json.load(open(sof.CALIB_PATH))
