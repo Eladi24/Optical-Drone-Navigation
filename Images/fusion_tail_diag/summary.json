@@ -1,0 +1,661 @@
+[
+  {
+    "flight": "01",
+    "estimator": "split_vlad_xfeat_rc",
+    "n": 817,
+    "vo_ok": 0.8100490196078431,
+    "fused": {
+      "mean": 46.763101648054636,
+      "median": 28.43926013968563,
+      "p90": 110.40358866540308,
+      "A@20": 0.3011015911872705,
+      "A@50": 0.7307221542227662,
+      "A@100": 0.8714810281517748
+    },
+    "loess_all_stills": {
+      "mean": 110.4704892386933,
+      "median": 20.86835161356997,
+      "p90": 426.53375154882906,
+      "A@20": 0.47980416156670747,
+      "A@50": 0.7772337821297429,
+      "A@100": 0.8151774785801713
+    },
+    "fused_at_anchor_stills": {
+      "mean": 26.80989025021411,
+      "median": 23.026569055765798,
+      "p90": 48.91388595853686,
+      "A@20": 0.4088983050847458,
+      "A@50": 0.902542372881356,
+      "A@100": 0.9851694915254238
+    },
+    "loess_at_anchor_stills": {
+      "mean": 124.40944517084701,
+      "median": 20.6539135431132,
+      "p90": 510.9990581943206,
+      "A@20": 0.4830508474576271,
+      "A@50": 0.7563559322033898,
+      "A@100": 0.798728813559322
+    },
+    "by_source": {
+      "anchor": {
+        "count": 440,
+        "frac": 0.5385556915544676,
+        "mean": 25.754039160144252,
+        "median": 22.989567837658477,
+        "share_of_total_error": 0.2966010354616699,
+        "tail_count": 4
+      },
+      "consensus": {
+        "count": 357,
+        "frac": 0.4369645042839657,
+        "mean": 71.39050176659738,
+        "median": 46.90426686224153,
+        "share_of_total_error": 0.6670882408485951,
+        "tail_count": 96
+      },
+      "bridge": {
+        "count": 20,
+        "frac": 0.02447980416156671,
+        "mean": 69.36338426609521,
+        "median": 54.129264659595094,
+        "share_of_total_error": 0.036310723689735105,
+        "tail_count": 5,
+        "median_gap_stills": 4.0,
+        "median_gap_vo_fail": 1.0,
+        "tail_median_gap_vo_fail": 0.8571428571428572
+      },
+      "one-sided": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 99,
+      "drift": 99,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 96,
+      "final_error_share": {
+        "drift": 0.40321956725424235,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 105,
+    "tail_share_of_total_error": 0.4302510767710893,
+    "drift_detail": {
+      "median_odometry_term_m": 135.06959631338518,
+      "median_anchor_noise_term_m": 13.915155213906987,
+      "own_anchor_within_50m": 4,
+      "own_anchor_missing_or_wrong": 95
+    }
+  },
+  {
+    "flight": "03",
+    "estimator": "split_vlad_xfeat",
+    "n": 768,
+    "vo_ok": 0.9973924380704041,
+    "fused": {
+      "mean": 20.963701318217627,
+      "median": 18.640924113427786,
+      "p90": 33.224516304104796,
+      "A@20": 0.5520833333333334,
+      "A@50": 0.9817708333333334,
+      "A@100": 0.9973958333333334
+    },
+    "loess_all_stills": {
+      "mean": 71.76570435994849,
+      "median": 17.556787208319857,
+      "p90": 156.12546227034963,
+      "A@20": 0.5911458333333334,
+      "A@50": 0.8645833333333334,
+      "A@100": 0.8893229166666666
+    },
+    "fused_at_anchor_stills": {
+      "mean": 21.291869417923845,
+      "median": 18.814327615443617,
+      "p90": 33.82490047120241,
+      "A@20": 0.5420875420875421,
+      "A@50": 0.9781144781144782,
+      "A@100": 0.9966329966329966
+    },
+    "loess_at_anchor_stills": {
+      "mean": 62.77201684735712,
+      "median": 16.482556689778527,
+      "p90": 54.842830572487976,
+      "A@20": 0.6245791245791246,
+      "A@50": 0.8939393939393939,
+      "A@100": 0.9107744107744108
+    },
+    "by_source": {
+      "anchor": {
+        "count": 550,
+        "frac": 0.7161458333333334,
+        "mean": 20.4124371183427,
+        "median": 18.814327615443617,
+        "share_of_total_error": 0.697313969922687,
+        "tail_count": 0
+      },
+      "consensus": {
+        "count": 218,
+        "frac": 0.2838541666666667,
+        "mean": 22.354505492213995,
+        "median": 18.31737425941159,
+        "share_of_total_error": 0.30268603007731304,
+        "tail_count": 2
+      },
+      "bridge": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      },
+      "one-sided": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 2,
+      "drift": 2,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 2,
+      "final_error_share": {
+        "drift": 0.03833424782764838,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 2,
+    "tail_share_of_total_error": 0.03833424782764838,
+    "drift_detail": {
+      "median_odometry_term_m": 308.5943129283221,
+      "median_anchor_noise_term_m": 22.955443886598605,
+      "own_anchor_within_50m": 0,
+      "own_anchor_missing_or_wrong": 2
+    }
+  },
+  {
+    "flight": "04",
+    "estimator": "split_vlad_xfeat",
+    "n": 738,
+    "vo_ok": 0.9918588873812755,
+    "fused": {
+      "mean": 33.63862015631322,
+      "median": 30.79770503090732,
+      "p90": 56.814725077102445,
+      "A@20": 0.23712737127371275,
+      "A@50": 0.8292682926829268,
+      "A@100": 1.0
+    },
+    "loess_all_stills": {
+      "mean": 105.25589945024159,
+      "median": 22.647702487003997,
+      "p90": 330.94616583884186,
+      "A@20": 0.43360433604336046,
+      "A@50": 0.8075880758807588,
+      "A@100": 0.8536585365853658
+    },
+    "fused_at_anchor_stills": {
+      "mean": 33.66759179404118,
+      "median": 31.116449899721264,
+      "p90": 56.52111574255474,
+      "A@20": 0.231496062992126,
+      "A@50": 0.8362204724409449,
+      "A@100": 1.0
+    },
+    "loess_at_anchor_stills": {
+      "mean": 94.31155044705721,
+      "median": 22.07159619965973,
+      "p90": 220.958038117557,
+      "A@20": 0.4503937007874016,
+      "A@50": 0.8283464566929134,
+      "A@100": 0.8724409448818897
+    },
+    "by_source": {
+      "anchor": {
+        "count": 601,
+        "frac": 0.8143631436314364,
+        "mean": 34.23374415101003,
+        "median": 31.703349633702487,
+        "share_of_total_error": 0.8287706028232734,
+        "tail_count": 0
+      },
+      "consensus": {
+        "count": 137,
+        "frac": 0.1856368563685637,
+        "mean": 31.027893727022857,
+        "median": 25.08161922006412,
+        "share_of_total_error": 0.1712293971767267,
+        "tail_count": 0
+      },
+      "bridge": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      },
+      "one-sided": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 0,
+      "drift": 0,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 0,
+      "final_error_share": {
+        "drift": 0.0,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 0,
+    "tail_share_of_total_error": 0.0,
+    "drift_detail": {
+      "median_odometry_term_m": NaN,
+      "median_anchor_noise_term_m": NaN,
+      "own_anchor_within_50m": 0,
+      "own_anchor_missing_or_wrong": 0
+    }
+  },
+  {
+    "flight": "08",
+    "estimator": "split_vlad_xfeat",
+    "n": 1033,
+    "vo_ok": 0.8178294573643411,
+    "fused": {
+      "mean": 402.5843220787419,
+      "median": 167.85401559593748,
+      "p90": 983.230156508147,
+      "A@20": 0.09583736689254599,
+      "A@50": 0.20232333010648595,
+      "A@100": 0.2933204259438529
+    },
+    "loess_all_stills": {
+      "mean": 812.5836026474378,
+      "median": 26.22362616583139,
+      "p90": 3179.4636511709828,
+      "A@20": 0.3969022265246854,
+      "A@50": 0.5769603097773476,
+      "A@100": 0.5972894482090997
+    },
+    "fused_at_anchor_stills": {
+      "mean": 122.1791194542262,
+      "median": 91.99707938544002,
+      "p90": 248.5016316322757,
+      "A@20": 0.23482849604221637,
+      "A@50": 0.44591029023746703,
+      "A@100": 0.5145118733509235
+    },
+    "loess_at_anchor_stills": {
+      "mean": 188.97214040411197,
+      "median": 17.457170430173175,
+      "p90": 486.43598705693216,
+      "A@20": 0.5936675461741425,
+      "A@50": 0.7889182058047494,
+      "A@100": 0.7968337730870713
+    },
+    "by_source": {
+      "anchor": {
+        "count": 170,
+        "frac": 0.16456921587608905,
+        "mean": 27.10158292904352,
+        "median": 19.902296851410625,
+        "share_of_total_error": 0.011078638702580027,
+        "tail_count": 6
+      },
+      "consensus": {
+        "count": 469,
+        "frac": 0.45401742497579867,
+        "mean": 182.7243514366301,
+        "median": 177.97762996036758,
+        "share_of_total_error": 0.20606872888459235,
+        "tail_count": 394
+      },
+      "bridge": {
+        "count": 190,
+        "frac": 0.18393030009680542,
+        "mean": 156.44340309737476,
+        "median": 158.02895394334877,
+        "share_of_total_error": 0.07147491966723327,
+        "tail_count": 140,
+        "median_gap_stills": 27.0,
+        "median_gap_vo_fail": 0.0,
+        "tail_median_gap_vo_fail": 0.0
+      },
+      "one-sided": {
+        "count": 204,
+        "frac": 0.19748305905130686,
+        "mean": 1450.1978833192268,
+        "median": 1017.2078330105563,
+        "share_of_total_error": 0.7113777127455944,
+        "tail_count": 190,
+        "median_gap_stills": 204.0,
+        "median_gap_vo_fail": 0.8872549019607843,
+        "tail_median_gap_vo_fail": 0.8872549019607843
+      }
+    },
+    "wrong_consensus": {
+      "stills": 407,
+      "drift": 375,
+      "outvoted": 28,
+      "starved": 4,
+      "of_which_final_in_tail": 399,
+      "final_error_share": {
+        "drift": 0.16987523951674283,
+        "outvoted": 0.02493561853107133,
+        "starved": 0.003532351931145603
+      }
+    },
+    "tail_count": 730,
+    "tail_share_of_total_error": 0.9714934762319061,
+    "drift_detail": {
+      "median_odometry_term_m": 186.49885373879354,
+      "median_anchor_noise_term_m": 14.097065657242592,
+      "own_anchor_within_50m": 80,
+      "own_anchor_missing_or_wrong": 295
+    }
+  },
+  {
+    "flight": "10",
+    "estimator": "split_vlad_xfeat_fp",
+    "n": 144,
+    "vo_ok": 1.0,
+    "fused": {
+      "mean": 110.69355017971702,
+      "median": 59.31061267870082,
+      "p90": 254.22195946680776,
+      "A@20": 0.08333333333333333,
+      "A@50": 0.4236111111111111,
+      "A@100": 0.6111111111111112
+    },
+    "loess_all_stills": {
+      "mean": 424.43622344077966,
+      "median": 331.2850658367059,
+      "p90": 986.9725496213622,
+      "A@20": 0.006944444444444444,
+      "A@50": 0.041666666666666664,
+      "A@100": 0.13194444444444445
+    },
+    "fused_at_anchor_stills": {
+      "mean": 60.868583162083155,
+      "median": 29.938372025426432,
+      "p90": 168.95239122037745,
+      "A@20": 0.24390243902439024,
+      "A@50": 0.7317073170731707,
+      "A@100": 0.7804878048780488
+    },
+    "loess_at_anchor_stills": {
+      "mean": 237.1390745359886,
+      "median": 177.95840047378437,
+      "p90": 480.8634923427903,
+      "A@20": 0.024390243902439025,
+      "A@50": 0.0975609756097561,
+      "A@100": 0.24390243902439024
+    },
+    "by_source": {
+      "anchor": {
+        "count": 26,
+        "frac": 0.18055555555555555,
+        "mean": 32.17668572272341,
+        "median": 25.048228248797678,
+        "share_of_total_error": 0.05248435303746701,
+        "tail_count": 2
+      },
+      "consensus": {
+        "count": 57,
+        "frac": 0.3958333333333333,
+        "mean": 58.705643164334184,
+        "median": 51.90220017123215,
+        "share_of_total_error": 0.20992777249883143,
+        "tail_count": 7
+      },
+      "bridge": {
+        "count": 5,
+        "frac": 0.034722222222222224,
+        "mean": 56.54185308639146,
+        "median": 45.97259787963051,
+        "share_of_total_error": 0.017735981767090025,
+        "tail_count": 1,
+        "median_gap_stills": 6.0,
+        "median_gap_vo_fail": 0.0,
+        "tail_median_gap_vo_fail": 0.0
+      },
+      "one-sided": {
+        "count": 56,
+        "frac": 0.3888888888888889,
+        "mean": 204.89904413016853,
+        "median": 205.02890163694806,
+        "share_of_total_error": 0.7198518926966117,
+        "tail_count": 46,
+        "median_gap_stills": 46.0,
+        "median_gap_vo_fail": 0.0,
+        "tail_median_gap_vo_fail": 0.0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 7,
+      "drift": 7,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 7,
+      "final_error_share": {
+        "drift": 0.05229660507347863,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 56,
+    "tail_share_of_total_error": 0.7668350102561677,
+    "drift_detail": {
+      "median_odometry_term_m": 80.992314139043,
+      "median_anchor_noise_term_m": 40.38170053355337,
+      "own_anchor_within_50m": 1,
+      "own_anchor_missing_or_wrong": 6
+    }
+  },
+  {
+    "flight": "av1",
+    "estimator": "split_vlad_xfeat_fp_rc",
+    "n": 639,
+    "vo_ok": 0.6112852664576802,
+    "fused": {
+      "mean": 175.9942528719732,
+      "median": 36.75981120005767,
+      "p90": 678.7279950227455,
+      "A@20": 0.2644757433489828,
+      "A@50": 0.5352112676056338,
+      "A@100": 0.7136150234741784
+    },
+    "loess_all_stills": {
+      "mean": 48.33702036501755,
+      "median": 40.50280837664176,
+      "p90": 89.13104860299647,
+      "A@20": 0.09389671361502347,
+      "A@50": 0.6244131455399061,
+      "A@100": 0.9217527386541471
+    },
+    "fused_at_anchor_stills": {
+      "mean": 173.170719020663,
+      "median": 32.86292217632045,
+      "p90": 665.081522570927,
+      "A@20": 0.31297709923664124,
+      "A@50": 0.566793893129771,
+      "A@100": 0.7232824427480916
+    },
+    "loess_at_anchor_stills": {
+      "mean": 49.00072135404248,
+      "median": 40.71598486266182,
+      "p90": 91.93800971022132,
+      "A@20": 0.08587786259541985,
+      "A@50": 0.6221374045801527,
+      "A@100": 0.916030534351145
+    },
+    "by_source": {
+      "anchor": {
+        "count": 237,
+        "frac": 0.37089201877934275,
+        "mean": 24.11337004060364,
+        "median": 18.868596477269758,
+        "share_of_total_error": 0.05081675309272008,
+        "tail_count": 6
+      },
+      "consensus": {
+        "count": 402,
+        "frac": 0.6291079812206573,
+        "mean": 265.5359673770344,
+        "median": 69.43742135573615,
+        "share_of_total_error": 0.94918324690728,
+        "tail_count": 177
+      },
+      "bridge": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      },
+      "one-sided": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 180,
+      "drift": 180,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 180,
+      "final_error_share": {
+        "drift": 0.86571499130589,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 183,
+    "tail_share_of_total_error": 0.869390424314414,
+    "drift_detail": {
+      "median_odometry_term_m": 513.4022366355559,
+      "median_anchor_noise_term_m": 33.01040176281988,
+      "own_anchor_within_50m": 44,
+      "own_anchor_missing_or_wrong": 136
+    }
+  },
+  {
+    "flight": "av2",
+    "estimator": "split_vlad_xfeat_fp_rc",
+    "n": 498,
+    "vo_ok": 1.0,
+    "fused": {
+      "mean": 23.699312362470554,
+      "median": 19.42603703522926,
+      "p90": 43.648728119445636,
+      "A@20": 0.5582329317269076,
+      "A@50": 0.9759036144578314,
+      "A@100": 1.0
+    },
+    "loess_all_stills": {
+      "mean": 339.74804763335464,
+      "median": 25.29800162108237,
+      "p90": 1254.2190191862107,
+      "A@20": 0.3514056224899598,
+      "A@50": 0.5562248995983936,
+      "A@100": 0.6024096385542169
+    },
+    "fused_at_anchor_stills": {
+      "mean": 23.718258652209297,
+      "median": 19.392861486681902,
+      "p90": 44.484373409545135,
+      "A@20": 0.5720524017467249,
+      "A@50": 0.9737991266375546,
+      "A@100": 1.0
+    },
+    "loess_at_anchor_stills": {
+      "mean": 367.6263828845721,
+      "median": 38.02591806812161,
+      "p90": 1298.5419172382622,
+      "A@20": 0.32096069868995636,
+      "A@50": 0.519650655021834,
+      "A@100": 0.5676855895196506
+    },
+    "by_source": {
+      "anchor": {
+        "count": 320,
+        "frac": 0.642570281124498,
+        "mean": 20.207090992477895,
+        "median": 19.089409785553634,
+        "share_of_total_error": 0.5478840879917942,
+        "tail_count": 0
+      },
+      "consensus": {
+        "count": 178,
+        "frac": 0.357429718875502,
+        "mean": 29.977463139985435,
+        "median": 34.66096793083784,
+        "share_of_total_error": 0.45211591200820567,
+        "tail_count": 0
+      },
+      "bridge": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      },
+      "one-sided": {
+        "count": 0,
+        "frac": 0.0,
+        "mean": NaN,
+        "median": NaN,
+        "share_of_total_error": 0.0,
+        "tail_count": 0
+      }
+    },
+    "wrong_consensus": {
+      "stills": 0,
+      "drift": 0,
+      "outvoted": 0,
+      "starved": 0,
+      "of_which_final_in_tail": 0,
+      "final_error_share": {
+        "drift": 0.0,
+        "outvoted": 0.0,
+        "starved": 0.0
+      }
+    },
+    "tail_count": 0,
+    "tail_share_of_total_error": 0.0,
+    "drift_detail": {
+      "median_odometry_term_m": NaN,
+      "median_anchor_noise_term_m": NaN,
+      "own_anchor_within_50m": 0,
+      "own_anchor_missing_or_wrong": 0
+    }
+  }
+]
