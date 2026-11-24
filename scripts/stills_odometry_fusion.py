@@ -210,14 +210,15 @@ def dead_reckon(odo, start=(0.0, 0.0)):
 
 # ---------------------------------------------------------------- fusion
 def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT,
-                    path_s=None, half_m=None, offset_model="mean"):
+                    path_s=None, half_m=None, offset_model="loclin"):
     """Window = anchors within +-half STILLS of still i, or -- when half_m is given -- within +-half_m METRES of
     path distance along the dead-reckoned odometry track (path_s, cumulative, no GPS). The still-count window
     silently changes meaning with the capture rate: +-10 stills is +-800-950 m on UAV-VisLoc but +-34 m on AerialVL
     (2 Hz), where neighbouring anchors share the same wrong pick and outvote the truth (2026-11-23).
 
     offset_model (2026-11-24, INVESTIGATION_LOG "Fusion-Tail Diagnostic"): how the winning cluster's offsets become
-    still i's offset. "mean" (default, unchanged): their plain mean. "loclin": a tricube-weighted local-linear fit of
+    still i's offset. "mean" (the previous default): their plain mean. "loclin" (default since 2026-11-24, passed its
+    pre-registered held-out gate, user decision): a tricube-weighted local-linear fit of
     the offsets against odometry path distance, evaluated AT still i -- the flat mean cannot follow an odometry track
     that bends inside the window (median bend 135-513 m on 01/08/av1 vs 14-33 m anchor noise). Kernel half-width =
     the existing window (no new parameter). One-sided clusters: the line is extrapolated no further than the members'
@@ -306,7 +307,7 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
 
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
-               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="mean"):
+               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="loclin"):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
@@ -391,9 +392,9 @@ def main():
                     help="weak prior for failed VO pairs: recent speed*dt (original) or recent step length")
     ap.add_argument("--fill", choices=("forward", "bridge"), default="forward",
                     help="with --gate-r: fill gaps from the nearest covered still, or bridge from both sides")
-    ap.add_argument("--offset-model", choices=("mean", "loclin"), default="mean",
-                    help="consensus offset: mean of the winning cluster (default) or a local-linear fit along the "
-                         "odometry path evaluated at the still (2026-11-24, see local_consensus)")
+    ap.add_argument("--offset-model", choices=("mean", "loclin"), default="loclin",
+                    help="consensus offset: local-linear fit along the odometry path evaluated at the still (default "
+                         "since 2026-11-24, see local_consensus) or the plain mean of the winning cluster (previous default)")
     a = ap.parse_args()
     flights = a.flights.split(",")
     if a.oracle and set(flights) & set(HELD_OUT):
