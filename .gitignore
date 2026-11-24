@@ -62,6 +62,8 @@ INVESTIGATION_LOG.md
 RESULTS.md
 RESULTS.en.html
 RESULTS.he.html
+PROJECT_STORY.en.html
+PROJECT_STORY.he.html
 # Ignore UAV-VisLoc converted satellite maps (regenerable via
 # scripts/convert_uavvisloc_satellite.py -- unlike Haifa/Jerusalem/Manhattan's
 # Google-Maps-fetched maps, these aren't capped by an API size limit and can
