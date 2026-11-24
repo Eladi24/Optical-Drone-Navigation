@@ -288,18 +288,31 @@ void processVideoNavigation(
         estimator->setGeoReference(mpp, meters_per_degree_lat, meters_per_degree_lng);
         estimator->setReferenceCropMeters(reference_crop_meters);
 
-        // Opt-in candidate re-centring (2026-11-24, INVESTIGATION_LOG "av1 dusk"): DRONENAV_RECENTRE=<passes>.
-        // Refuse loudly rather than silently run without it (outputs carry an "_rc" suffix).
-        if (const char* rc = std::getenv("DRONENAV_RECENTRE")) {
-            const int passes = std::atoi(rc);
-            if (passes < 1 || !estimator->enableCandidateRecentring(reference_map, center_lat, center_lng,
-                                                                    center_x, center_y, passes))
-                throw std::runtime_error("DRONENAV_RECENTRE=" + std::string(rc) + ": candidate re-centring is not "
+        // Candidate re-centring, ON by default since 2026-11-24 (passed its pre-registered test; INVESTIGATION_LOG
+        // "av1 dusk"). Outputs carry an "_rc" suffix so earlier results are never overwritten.
+        //   DRONENAV_NO_RECENTRE=1      -> off (the previous default, byte-identical).
+        //   DRONENAV_RECENTRE=<passes>  -> explicit request: refuse loudly if the estimator can't do it.
+        //   neither                     -> 1 pass where supported (split_* with XFeat/ORB matching, no refiner);
+        //                                  other estimators (orb, sift, DISK, refiner configs) run unchanged.
+        const char* rc_env = std::getenv("DRONENAV_RECENTRE");
+        if (std::getenv("DRONENAV_NO_RECENTRE") != nullptr) {
+            if (rc_env) throw std::runtime_error("DRONENAV_RECENTRE and DRONENAV_NO_RECENTRE are both set");
+            std::cout << "   Candidate re-centring: OFF (DRONENAV_NO_RECENTRE)" << std::endl;
+        } else {
+            const int passes = rc_env ? std::atoi(rc_env) : 1;
+            const bool enabled = passes >= 1 && estimator->enableCandidateRecentring(
+                reference_map, center_lat, center_lng, center_x, center_y, passes);
+            if (rc_env && !enabled)
+                throw std::runtime_error("DRONENAV_RECENTRE=" + std::string(rc_env) + ": candidate re-centring is not "
                                          "supported by '" + algorithm_name + "' (needs a split_* estimator whose "
                                          "matcher has an uncached-reference path, e.g. XFeat or ORB, and no refiner)");
-            algorithm_name += "_rc";
-            std::cout << "   Candidate re-centring: ON (" << passes << " pass" << (passes > 1 ? "es" : "")
-                      << "), output name " << algorithm_name << std::endl;
+            if (enabled) {
+                algorithm_name += "_rc";
+                std::cout << "   Candidate re-centring: ON (" << passes << " pass" << (passes > 1 ? "es" : "")
+                          << "), output name " << algorithm_name << std::endl;
+            } else {
+                std::cout << "   Candidate re-centring: not supported by " << algorithm_name << " (off)" << std::endl;
+            }
         }
 
         estimator->precompute(reference_crops);
