@@ -1,5 +1,6 @@
 #include "StageProfiler.hpp"
 #include <cstdlib>
+#include <stdexcept>
 #include <chrono>
 #include "VideoProcessing.hpp"
 #include "CoordinateUtils.hpp"
@@ -39,6 +40,14 @@ cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int 
     cv::warpAffine(frame, rotated_crop, rot_matrix, cv::Size(take, take),
                    cv::INTER_LINEAR, cv::BORDER_CONSTANT, cv::Scalar(0, 0, 0));
     return rotated_crop;
+}
+
+cv::Rect referenceCropRect(const cv::Point& centre_px, int crop_size_px, const cv::Size& map_size)
+{
+    cv::Rect crop_rect(centre_px.x - crop_size_px / 2, centre_px.y - crop_size_px / 2, crop_size_px, crop_size_px);
+    crop_rect &= cv::Rect(0, 0, map_size.width, map_size.height);
+    if (crop_rect.width > crop_size_px * 0.5 && crop_rect.height > crop_size_px * 0.5) return crop_rect;
+    return cv::Rect();
 }
 
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
@@ -100,15 +109,8 @@ std::vector<ReferenceCrop> generateReferenceCropsGrid(
                 center_x, center_y, mpp,
                 meters_per_degree_lat, meters_per_degree_lng);
 
-            cv::Rect crop_rect(
-                pixel.x - crop_size_px / 2,
-                pixel.y - crop_size_px / 2,
-                crop_size_px, crop_size_px);
-            crop_rect = crop_rect & cv::Rect(0, 0, map.cols, map.rows);
-
-            if (crop_rect.width  > crop_size_px * 0.5 &&
-                crop_rect.height > crop_size_px * 0.5)
-            {
+            const cv::Rect crop_rect = referenceCropRect(pixel, crop_size_px, map.size());
+            if (!crop_rect.empty()) {
                 crops.push_back(ReferenceCrop({lat, lng}, map(crop_rect).clone()));
                 ++crop_count;
             }
@@ -285,6 +287,20 @@ void processVideoNavigation(
         estimator->setFeatureMask(aligned_mask);
         estimator->setGeoReference(mpp, meters_per_degree_lat, meters_per_degree_lng);
         estimator->setReferenceCropMeters(reference_crop_meters);
+
+        // Opt-in candidate re-centring (2026-11-24, INVESTIGATION_LOG "av1 dusk"): DRONENAV_RECENTRE=<passes>.
+        // Refuse loudly rather than silently run without it (outputs carry an "_rc" suffix).
+        if (const char* rc = std::getenv("DRONENAV_RECENTRE")) {
+            const int passes = std::atoi(rc);
+            if (passes < 1 || !estimator->enableCandidateRecentring(reference_map, center_lat, center_lng,
+                                                                    center_x, center_y, passes))
+                throw std::runtime_error("DRONENAV_RECENTRE=" + std::string(rc) + ": candidate re-centring is not "
+                                         "supported by '" + algorithm_name + "' (needs a split_* estimator whose "
+                                         "matcher has an uncached-reference path, e.g. XFeat or ORB, and no refiner)");
+            algorithm_name += "_rc";
+            std::cout << "   Candidate re-centring: ON (" << passes << " pass" << (passes > 1 ? "es" : "")
+                      << "), output name " << algorithm_name << std::endl;
+        }
 
         estimator->precompute(reference_crops);
     }

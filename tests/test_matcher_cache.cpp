@@ -55,3 +55,26 @@ TEST(MatcherCache, DiskLightGlueUsesEachFramesOwnFeatures)
     DiskLightGlueMatching matcher(kModels + "disk.onnx", kModels + "disk_lightglue.onnx");
     checkFreshFeaturesPerFrame(matcher);
 }
+
+// Candidate re-centring (2026-11-24): matchUncachedReference() on a crop buffer overwritten in place
+// (same address, new content) must follow the new content -- re-centred crops are short-lived and
+// routinely reuse the previous one's address.
+TEST(MatcherCache, XFeatUncachedReferenceFollowsTheBuffersCurrentContent)
+{
+    if (!haveModels({"xfeat.onnx"})) GTEST_SKIP() << "models/xfeat.onnx not present";
+    XFeatMatching matcher(kModels + "xfeat.onnx");
+    cv::Mat map = testutil::makeTexture(900, 900, 99);
+    const cv::Mat frame = map(cv::Rect(300, 300, 300, 300)).clone();
+    matcher.beginFrame(frame);
+    cv::Mat crop_buffer(300, 300, CV_8UC3);
+    const uchar* addr = crop_buffer.data;
+    for (const cv::Point origin : {cv::Point(280, 320), cv::Point(325, 290), cv::Point(310, 310)}) {
+        map(cv::Rect(origin.x, origin.y, 300, 300)).copyTo(crop_buffer);
+        ASSERT_EQ(crop_buffer.data, addr);
+        MatchResult m = matcher.matchUncachedReference(frame, ReferenceCrop({0.0, 0.0}, crop_buffer));
+        ASSERT_FALSE(m.homography.empty()) << "origin " << origin;
+        EXPECT_GT(m.inliers, 20);
+        EXPECT_NEAR(m.homography.at<double>(0, 2), 300 - origin.x, 3.0) << "origin " << origin;
+        EXPECT_NEAR(m.homography.at<double>(1, 2), 300 - origin.y, 3.0) << "origin " << origin;
+    }
+}

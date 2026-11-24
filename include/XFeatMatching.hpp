@@ -33,6 +33,9 @@ public:
 
     void setFeatureMask(const cv::Mat& mask) override { feature_mask_ = mask; }
     MatchResult match(const cv::Mat& frame, const ReferenceCrop& crop) override;
+    // Candidate re-centring (see IMatchingStage): reference features extracted fresh, never cached.
+    bool supportsUncachedReference() const override { return true; }
+    MatchResult matchUncachedReference(const cv::Mat& frame, const ReferenceCrop& crop) override;
     void beginFrame(const cv::Mat& frame) override;  // evicts a stale query entry (see IMatchingStage)
 
 private:
@@ -49,6 +52,8 @@ private:
     // not just a soft discouragement -- see CLAUDE.md's mask-alignment findings).
     ExtractedFeatures extract(const cv::Mat& image, const cv::Mat& mask = cv::Mat());
     const ExtractedFeatures* getCachedFeatures(const cv::Mat& image, const cv::Mat& mask = cv::Mat());
+    // Mutual-NN + cosine threshold + RANSAC on two already-extracted feature sets.
+    MatchResult matchFeatures(const ExtractedFeatures& qf, const ExtractedFeatures& rf) const;
 
     Ort::Env env_;
     Ort::Session session_;

@@ -7,6 +7,7 @@
 #include "VideoProcessing.hpp"  // kReferenceCropMeters
 #include <opencv2/calib3d.hpp>
 #include <algorithm>
+#include <cmath>
 
 namespace {
 // One candidate crop match per task -- unlike ORBFeatureEstimator's own chunked-range-of-crops
@@ -66,6 +67,60 @@ void SplitPipelineEstimator::setGeoReference(double mpp, double meters_per_degre
     meters_per_degree_lng_ = meters_per_degree_lng;
 }
 
+bool SplitPipelineEstimator::enableCandidateRecentring(const cv::Mat& map, double center_lat, double center_lng,
+                                                       int center_x, int center_y, int passes)
+{
+    if (passes < 1 || map.empty() || refiner_ || !matching_->supportsUncachedReference()) return false;
+    recentre_passes_ = passes;
+    recentre_map_    = map;
+    map_center_lat_  = center_lat;
+    map_center_lng_  = center_lng;
+    map_center_x_    = center_x;
+    map_center_y_    = center_y;
+    return true;
+}
+
+// Mirrors scripts/av1_recentre_diag.py: project the frame centre through the candidate's homography,
+// cut a new crop of the grid's size centred there (same referenceCropRect as the grid), re-match it.
+// A candidate whose projection leaves the map or whose re-match fails gets an empty match (drops out).
+SplitPipelineEstimator::Recentred SplitPipelineEstimator::recentre(const cv::Mat& drone_view,
+                                                                   const ReferenceCrop& grid_crop,
+                                                                   const MatchResult& first) const
+{
+    Recentred cur{grid_crop, first};
+    if (mpp_ <= 0.0) return cur;
+    const double crop_m = reference_crop_meters_ > 0 ? reference_crop_meters_ : kReferenceCropMeters;
+    const int crop_px = static_cast<int>(std::round(crop_m / mpp_));
+
+    for (int pass = 0; pass < recentre_passes_; ++pass) {
+        if (cur.match.homography.empty() || cur.match.inliers == 0) break;
+        std::vector<cv::Point2f> src{cv::Point2f(drone_view.cols / 2.0f, drone_view.rows / 2.0f)};
+        std::vector<cv::Point2f> dst;
+        cv::perspectiveTransform(src, dst, cur.match.homography);
+        // Map pixel of the crop centre, then offset by where the frame centre landed in the crop --
+        // the same crop-centre convention estimatePosition()'s position projection uses.
+        const cv::Point crop_centre_px = CoordinateUtils::latLngToPixel(
+            cur.crop.coordinates.first, cur.crop.coordinates.second, map_center_lat_, map_center_lng_,
+            map_center_x_, map_center_y_, mpp_, meters_per_degree_lat_, meters_per_degree_lng_);
+        const double mx = crop_centre_px.x + (dst[0].x - cur.crop.image.cols / 2.0);
+        const double my = crop_centre_px.y + (dst[0].y - cur.crop.image.rows / 2.0);
+        if (!std::isfinite(mx) || !std::isfinite(my) || std::abs(mx) > 1e7 || std::abs(my) > 1e7)
+            return Recentred{grid_crop, MatchResult{}};
+        const cv::Point centre(static_cast<int>(std::lround(mx)), static_cast<int>(std::lround(my)));
+        const cv::Rect rect = referenceCropRect(centre, crop_px, recentre_map_.size());
+        if (rect.empty()) return Recentred{grid_crop, MatchResult{}};
+
+        ReferenceCrop crop(CoordinateUtils::pixelToLatLng(centre.x, centre.y, map_center_lat_, map_center_lng_,
+                                                          map_center_x_, map_center_y_, mpp_,
+                                                          meters_per_degree_lat_, meters_per_degree_lng_),
+                           recentre_map_(rect).clone());
+        MatchResult m = matching_->matchUncachedReference(drone_view, crop);
+        if (m.homography.empty() || m.inliers == 0) return Recentred{grid_crop, MatchResult{}};
+        cur = Recentred{std::move(crop), std::move(m)};
+    }
+    return cur;
+}
+
 PositionEstimate SplitPipelineEstimator::estimatePosition(
     const cv::Mat& drone_view,
     const std::vector<ReferenceCrop>& reference_crops,
@@ -109,7 +164,10 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
     // Reduce a completed set of per-candidate MatchResults down to best_idx/best_inliers/best_H
     // and surviving_candidates -- shared by both the threaded and sequential paths below so the
     // selection logic (and therefore the numbers) is identical either way.
-    auto consider = [&](int idx, const MatchResult& m) {
+    // `matched_crop` = the crop the homography maps into: the grid crop itself, or its re-centred
+    // replacement. Candidate coordinates stay the GRID crop's, so recall@k keeps its meaning.
+    const ReferenceCrop* best_crop = nullptr;
+    auto consider = [&](int idx, const MatchResult& m, const ReferenceCrop& matched_crop) {
         if (idx < 0 || m.homography.empty() || m.inliers == 0) return;
         surviving_candidates.push_back({reference_crops[idx].coordinates,
                                          static_cast<double>(m.inliers)});
@@ -117,8 +175,11 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
             best_inliers = m.inliers;
             best_idx     = idx;
             best_H       = m.homography;
+            best_crop    = &matched_crop;
         }
     };
+    // Per-candidate first-pass results, in candidate order, reduced by consider() below.
+    std::vector<std::pair<int, MatchResult>> first_pass;
 
     auto t_match0 = std::chrono::steady_clock::now();
     if (matching_->isThreadSafe()) {
@@ -148,18 +209,35 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
             }
             barrier.wait();  // blocks until all n tasks have signalled
 
-            for (const auto& t : tasks) consider(t.crop_idx, t.result);
+            for (const auto& t : tasks) first_pass.emplace_back(t.crop_idx, t.result);
         }
     } else {
         for (int idx : candidate_indices) {
             if (idx < 0 || idx >= static_cast<int>(reference_crops.size())) continue;
-            consider(idx, matching_->match(drone_view, reference_crops[idx]));
+            first_pass.emplace_back(idx, matching_->match(drone_view, reference_crops[idx]));
         }
     }
 
     if (StageProfiler::enabled())
         StageProfiler::add("3b matching, all candidates (wall)",
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_match0).count());
+
+    // Candidate re-centring (opt-in): replace each candidate's (crop, match) by its re-centred one and
+    // rank on THOSE inliers. Sequential: only matchers without isThreadSafe() support it today.
+    std::vector<Recentred> recentred;
+    if (recentre_passes_ > 0) {
+        auto t_rc0 = std::chrono::steady_clock::now();
+        recentred.reserve(first_pass.size());  // no reallocation: consider() keeps pointers into it
+        for (const auto& [idx, m] : first_pass)
+            recentred.push_back(recentre(drone_view, reference_crops[idx], m));
+        if (StageProfiler::enabled())
+            StageProfiler::add("3c re-centring (wall)",
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_rc0).count());
+        for (size_t i = 0; i < first_pass.size(); ++i)
+            consider(first_pass[i].first, recentred[i].match, recentred[i].crop);
+    } else {
+        for (const auto& [idx, m] : first_pass) consider(idx, m, reference_crops[idx]);
+    }
 
     // No candidate produced a geometrically consistent homography -- no real
     // measurement this frame. Same honest-reporting contract as
@@ -178,7 +256,7 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
     // stay entirely `matching_`'s. Motivated by CLAUDE.md's "Option A" log:
     // dense DINOv2 matching gives a much tighter pose (~35m vs ~74m PDM@5) on an
     // already-correctly-chosen crop but cannot pick the crop itself.
-    if (refiner_) {
+    if (refiner_) {  // never combined with re-centring (enableCandidateRecentring refuses), so best_crop is the grid crop
         MatchResult r = refiner_->match(drone_view, reference_crops[best_idx]);
         if (!r.homography.empty() && r.inliers > 0)
             best_H = r.homography;
@@ -188,9 +266,9 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
     // through the winning homography instead of returning the matched
     // crop's centroid (STRATEGY.md Sec 4.2) -- identical logic to
     // ORBFeatureEstimator::estimatePosition().
-    std::pair<double, double> refined_position = reference_crops[best_idx].coordinates;
+    std::pair<double, double> refined_position = best_crop->coordinates;
     if (mpp_ > 0.0) {
-        const cv::Mat& crop_image = reference_crops[best_idx].image;
+        const cv::Mat& crop_image = best_crop->image;
         std::vector<cv::Point2f> src{cv::Point2f(drone_view.cols / 2.0f, drone_view.rows / 2.0f)};
         std::vector<cv::Point2f> dst;
         cv::perspectiveTransform(src, dst, best_H);
@@ -204,8 +282,8 @@ PositionEstimate SplitPipelineEstimator::estimatePosition(
         if (offset_m_x <= crop_m * 0.75 && offset_m_y <= crop_m * 0.75) {
             refined_position = CoordinateUtils::pixelToLatLng(
                 static_cast<int>(dst[0].x), static_cast<int>(dst[0].y),
-                reference_crops[best_idx].coordinates.first,
-                reference_crops[best_idx].coordinates.second,
+                best_crop->coordinates.first,
+                best_crop->coordinates.second,
                 crop_image.cols / 2, crop_image.rows / 2,
                 mpp_, meters_per_degree_lat_, meters_per_degree_lng_);
         }

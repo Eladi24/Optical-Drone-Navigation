@@ -79,6 +79,18 @@ public:
     // 2026-11-23: see footprintMatchedCropGeometry() in VideoProcessing.hpp.
     virtual void setReferenceCropMeters(int /*meters*/) {}
 
+    // Candidate re-centring (opt-in, DRONENAV_RECENTRE; 2026-11-24, INVESTIGATION_LOG "av1 dusk"): after
+    // matching each retrieved candidate, cut a new crop from `map` centred where the homography puts the
+    // frame centre, re-match, and rank by the re-centred inliers. `map` + centre_* are the same
+    // geo-reference the crop grid was generated with (generateReferenceCropsGrid). Call after
+    // setGeoReference()/setReferenceCropMeters(). Returns false if this estimator can't do it (the
+    // caller must then fail loudly, never run silently without it). Default: unsupported.
+    virtual bool enableCandidateRecentring(const cv::Mat& /*map*/, double /*center_lat*/, double /*center_lng*/,
+                                           int /*center_x*/, int /*center_y*/, int /*passes*/)
+    {
+        return false;
+    }
+
     virtual PositionEstimate estimatePosition(
         const cv::Mat& drone_view,
         const std::vector<ReferenceCrop>& reference_crops,

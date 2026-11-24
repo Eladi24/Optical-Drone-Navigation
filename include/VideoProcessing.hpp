@@ -46,6 +46,11 @@ ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame
 
 cv::Mat headingPrewarpCrop(const cv::Mat& frame, const cv::Point2f& centre, int take, double heading_deg);
 
+// The map rectangle of one reference crop centred at `centre_px`: crop_size_px square, clipped to the map,
+// empty if the clipped part is not more than half the crop in both axes. Shared by the grid generator and
+// candidate re-centring (SplitPipelineEstimator) so both cut crops identically.
+cv::Rect referenceCropRect(const cv::Point& centre_px, int crop_size_px, const cv::Size& map_size);
+
 std::vector<ReferenceCrop> generateReferenceCropsGrid(
     const cv::Mat& map,
     double center_lat, double center_lng,

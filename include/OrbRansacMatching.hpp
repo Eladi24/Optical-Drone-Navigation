@@ -1,5 +1,6 @@
 #pragma once
 #include "RetrievalStage.hpp"
+#include <functional>
 #include <unordered_map>
 
 // Matching stage: given one candidate crop, independently detects ORB
@@ -23,6 +24,10 @@ public:
 
     MatchResult match(const cv::Mat& frame, const ReferenceCrop& crop) override;
 
+    // Candidate re-centring (see IMatchingStage): reference features extracted fresh, never cached.
+    bool supportsUncachedReference() const override { return true; }
+    MatchResult matchUncachedReference(const cv::Mat& frame, const ReferenceCrop& crop) override;
+
 private:
     cv::Ptr<cv::ORB> orb_detector_;
     cv::Mat feature_mask_;  // applied only to the query frame, not reference crops
@@ -34,4 +39,6 @@ private:
     };
     mutable std::unordered_map<const uchar*, CachedFeatures> feature_cache_;
     const CachedFeatures* getCachedFeatures(const cv::Mat& image) const;
+    CachedFeatures extractReference(const cv::Mat& image) const;
+    MatchResult matchAgainst(const cv::Mat& frame, const std::function<const CachedFeatures*()>& reference);
 };

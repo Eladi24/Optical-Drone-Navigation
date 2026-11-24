@@ -132,14 +132,34 @@ const XFeatMatching::ExtractedFeatures* XFeatMatching::getCachedFeatures(const c
 
 MatchResult XFeatMatching::match(const cv::Mat& frame, const ReferenceCrop& crop)
 {
-    MatchResult result;
-    if (frame.empty() || crop.image.empty()) return result;
+    if (frame.empty() || crop.image.empty()) return MatchResult{};
 
     const ExtractedFeatures* qf = getCachedFeatures(frame, feature_mask_);
-    if (!qf) return result;
+    if (!qf) return MatchResult{};
 
     const ExtractedFeatures* rf = getCachedFeatures(crop.image);  // no mask for reference crops
-    if (!rf) return result;
+    if (!rf) return MatchResult{};
+    return matchFeatures(*qf, *rf);
+}
+
+MatchResult XFeatMatching::matchUncachedReference(const cv::Mat& frame, const ReferenceCrop& crop)
+{
+    if (frame.empty() || crop.image.empty()) return MatchResult{};
+
+    const ExtractedFeatures* qf = getCachedFeatures(frame, feature_mask_);  // query cache: fine
+    if (!qf) return MatchResult{};
+
+    // Short-lived crop: extracted fresh, never enters feature_cache_ (see IMatchingStage).
+    const ExtractedFeatures rf = extract(crop.image);
+    if (!rf.valid) return MatchResult{};
+    return matchFeatures(*qf, rf);
+}
+
+MatchResult XFeatMatching::matchFeatures(const ExtractedFeatures& qf_ref, const ExtractedFeatures& rf_ref) const
+{
+    MatchResult result;
+    const ExtractedFeatures* qf = &qf_ref;
+    const ExtractedFeatures* rf = &rf_ref;
 
     // Mutual nearest-neighbor + cosine-similarity threshold -- NOT Lowe's
     // ratio test. Deliberate deviation from OrbRansacMatching's recipe,

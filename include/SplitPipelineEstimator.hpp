@@ -47,6 +47,10 @@ public:
     void setReferenceCropMeters(int meters) override { reference_crop_meters_ = meters; }
     void setGeoReference(double mpp, double meters_per_degree_lat,
                           double meters_per_degree_lng) override;
+    // Opt-in candidate re-centring (see IPositionEstimator). Needs a matcher with an uncached-reference
+    // path and no refiner_; returns false otherwise.
+    bool enableCandidateRecentring(const cv::Mat& map, double center_lat, double center_lng,
+                                   int center_x, int center_y, int passes) override;
 
     PositionEstimate estimatePosition(
         const cv::Mat& drone_view,
@@ -72,4 +76,18 @@ private:
     int    reference_crop_meters_ = 0;  // 0 = kReferenceCropMeters; see setReferenceCropMeters()
     double meters_per_degree_lat_ = 0.0;
     double meters_per_degree_lng_ = 0.0;
+
+    // Candidate re-centring state (passes 0 = off, every pre-2026-11-24 config).
+    int     recentre_passes_ = 0;
+    cv::Mat recentre_map_;  // shared header onto the pipeline's reference map, not a copy
+    double  map_center_lat_ = 0.0, map_center_lng_ = 0.0;
+    int     map_center_x_ = 0, map_center_y_ = 0;
+
+    // One candidate after re-centring: the crop actually matched last (grid crop if passes == 0)
+    // and its match result.
+    struct Recentred {
+        ReferenceCrop crop;
+        MatchResult   match;
+    };
+    Recentred recentre(const cv::Mat& drone_view, const ReferenceCrop& grid_crop, const MatchResult& first) const;
 };

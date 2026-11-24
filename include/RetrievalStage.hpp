@@ -1,5 +1,6 @@
 #pragma once
 #include <opencv2/opencv.hpp>
+#include <stdexcept>
 #include <vector>
 #include "DroneSimulation.hpp"  // ReferenceCrop
 
@@ -61,4 +62,17 @@ public:
     // that date matched candidates against the FIRST frame of the flight. Reference crops live
     // for the whole run, so a live crop can never share the new frame's address.
     virtual void beginFrame(const cv::Mat& /*frame*/) {}
+
+    // match() against a SHORT-LIVED crop (candidate re-centring, 2026-11-24: a crop cut from the
+    // map at a homography-projected centre, freed right after). The crop's features must be
+    // extracted fresh and must never be read from or written to an address-keyed reference cache:
+    // the next short-lived crop routinely gets the same buffer address back, which would silently
+    // serve this crop's features for different content (the 2026-11-17 stale-cache failure mode).
+    // The query-side cache may still be used. Matchers that can't guarantee this keep the default
+    // (unsupported); SplitPipelineEstimator then refuses to enable re-centring.
+    virtual bool supportsUncachedReference() const { return false; }
+    virtual MatchResult matchUncachedReference(const cv::Mat& /*frame*/, const ReferenceCrop& /*crop*/)
+    {
+        throw std::logic_error("IMatchingStage::matchUncachedReference: not supported by this matcher");
+    }
 };

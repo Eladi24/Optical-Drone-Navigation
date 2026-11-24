@@ -15,6 +15,12 @@ OrbRansacMatching::getCachedFeatures(const cv::Mat& image) const
     if (it != feature_cache_.end())
         return it->second.valid ? &it->second : nullptr;
 
+    auto [ins, _] = feature_cache_.emplace(key, extractReference(image));
+    return ins->second.valid ? &ins->second : nullptr;
+}
+
+OrbRansacMatching::CachedFeatures OrbRansacMatching::extractReference(const cv::Mat& image) const
+{
     CachedFeatures entry;
     orb_detector_->detectAndCompute(image, cv::noArray(), entry.keypoints, entry.descriptors);
     // Same threshold and rationale as ORBFeatureEstimator.cpp's
@@ -23,15 +29,31 @@ OrbRansacMatching::getCachedFeatures(const cv::Mat& image) const
     static constexpr size_t MIN_VALID_KEYPOINTS = 150;
     entry.valid = !entry.descriptors.empty() &&
                   entry.keypoints.size() >= MIN_VALID_KEYPOINTS;
-
-    auto [ins, _] = feature_cache_.emplace(key, std::move(entry));
-    return ins->second.valid ? &ins->second : nullptr;
+    return entry;
 }
 
 MatchResult OrbRansacMatching::match(const cv::Mat& frame, const ReferenceCrop& crop)
 {
+    if (frame.empty() || crop.image.empty()) return MatchResult{};
+    return matchAgainst(frame, [&] { return getCachedFeatures(crop.image); });
+}
+
+MatchResult OrbRansacMatching::matchUncachedReference(const cv::Mat& frame, const ReferenceCrop& crop)
+{
+    if (frame.empty() || crop.image.empty()) return MatchResult{};
+    CachedFeatures fresh;  // lives only for this call, never enters feature_cache_
+    return matchAgainst(frame, [&]() -> const CachedFeatures* {
+        fresh = extractReference(crop.image);
+        return fresh.valid ? &fresh : nullptr;
+    });
+}
+
+// Query detection first, then the reference lookup -- same order as before the 2026-11-24 split, so a
+// featureless frame still never touches (or populates) the reference cache.
+MatchResult OrbRansacMatching::matchAgainst(const cv::Mat& frame,
+                                            const std::function<const CachedFeatures*()>& reference)
+{
     MatchResult result;
-    if (frame.empty() || crop.image.empty()) return result;
 
     std::vector<cv::KeyPoint> kp_frame;
     cv::Mat desc_frame;
@@ -39,7 +61,7 @@ MatchResult OrbRansacMatching::match(const cv::Mat& frame, const ReferenceCrop& 
     orb_detector_->detectAndCompute(frame, mask_input, kp_frame, desc_frame);
     if (kp_frame.size() < 10 || desc_frame.empty()) return result;
 
-    const CachedFeatures* ref = getCachedFeatures(crop.image);
+    const CachedFeatures* ref = reference();
     if (!ref) return result;  // featureless or invalid crop
 
     cv::BFMatcher matcher(cv::NORM_HAMMING);
