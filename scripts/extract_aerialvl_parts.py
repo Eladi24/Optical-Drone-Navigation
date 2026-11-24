@@ -13,9 +13,12 @@ Known layout (parsed 2026-11-17): part 001 = geo_referenced_map/ (large + small 
 639 frames of long_trajtr/2023-03-16-18-04-01; part 027 = the last 498 frames of
 short_trajtr/2023-03-18-16-55-37. Frames are named @<UTC ms>@<lon>@<lat>@.png.
 
+Parts 019-021 (2026-11-24): short_trajtr/2023-03-11-11-48-35 (922 frames, midday) and
+short_trajtr/2023-03-16-16-58-43 (501 frames, 17:02 local) -- the av3/av4 fresh test.
+
 Usage:
     python3 -I scripts/extract_aerialvl_parts.py \
-        --parts-dir Datasets/AerialVL/val_zip_parts --out Datasets/AerialVL/extracted
+        --parts-dir Datasets/AerialVL/val_zip_parts --out Datasets/AerialVL/extracted [--parts 19,20,21]
 """
 import argparse
 import collections
@@ -72,11 +75,17 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--parts-dir", required=True, type=Path)
     ap.add_argument("--out", required=True, type=Path)
+    ap.add_argument("--parts", default=None,
+                    help="comma-separated part numbers to extract from (e.g. 19,20,21); default: every part on disk. "
+                         "The last part is always read for the central directory.")
     args = ap.parse_args()
 
     last = args.parts_dir / f"VAL.zip.{LAST_PART:03d}"
     ents = read_central_directory(last)
     have = {int(p.suffix[1:]): p for p in args.parts_dir.glob("VAL.zip.[0-9][0-9][0-9]")}
+    if args.parts:
+        want = {int(x) for x in args.parts.split(",")}
+        have = {k: v for k, v in have.items() if k in want}
     print(f"{len(ents)} archive members; parts on disk: {sorted(have)}")
 
     done, skipped = collections.Counter(), collections.Counter()

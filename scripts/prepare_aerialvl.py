@@ -41,7 +41,10 @@ SRC = REPO / "Datasets" / "AerialVL" / "extracted"
 OUT = REPO / "Datasets" / "AerialVL" / "visloc_format"
 VISLOC_ROOT = REPO / "Datasets" / "UAV_VisLoc_dataset"
 CSV_DIR = REPO / "CSV Files"
-SEQS = {"av1": "long_trajtr/2023-03-16-18-04-01", "av2": "short_trajtr/2023-03-18-16-55-37"}
+SEQS = {"av1": "long_trajtr/2023-03-16-18-04-01", "av2": "short_trajtr/2023-03-18-16-55-37",
+        # 2026-11-24 fresh test (parts 019-021, never seen by any design decision): midday on another day, and late
+        # afternoon on av1's day.
+        "av3": "short_trajtr/2023-03-11-11-48-35", "av4": "short_trajtr/2023-03-16-16-58-43"}
 HFOV_DEG = 51.5           # CameraModel::kUavVisLocHfovDeg -- the frozen constant
 M_LAT = 111320.0
 HEADER = ["num", "filename", "date", "lat", "lon", "height", "Omega", "Kappa", "Phi1", "Phi2"]

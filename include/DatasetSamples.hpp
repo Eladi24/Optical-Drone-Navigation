@@ -304,6 +304,27 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
         "aerialvl_large",
         "Videos/dataset_uavvisloc_av1.avi",
     });
+    // av3/av4 (2026-11-24): FRESH test sequences from parts 019-021, never seen by any design decision. Same adapter
+    // and conventions as av1/av2. av3 = short_trajtr/2023-03-11-11-48-35 (midday, another day; 921 of 922 frames, one
+    // straddles a zip part), av4 = short_trajtr/2023-03-16-16-58-43 (17:02 local; 500 of 501 frames).
+    samples.push_back({
+        "uavvisloc_av3", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/av3/drone", "av3", 921,
+        "Datasets/UAV_VisLoc_dataset/av3/av3.csv",
+        "Images/map_clean_aerialvl_large.png",
+        "Datasets/aerialvl_coordinates_range.csv",
+        "aerialvl_large",
+        "Videos/dataset_uavvisloc_av3.avi",
+    });
+    samples.push_back({
+        "uavvisloc_av4", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/av4/drone", "av4", 500,
+        "Datasets/UAV_VisLoc_dataset/av4/av4.csv",
+        "Images/map_clean_aerialvl_large.png",
+        "Datasets/aerialvl_coordinates_range.csv",
+        "aerialvl_large",
+        "Videos/dataset_uavvisloc_av4.avi",
+    });
 
     return samples;
 }
