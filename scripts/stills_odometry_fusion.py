@@ -98,6 +98,7 @@ def load_flight(flight, estimator):
     # Video Frame -> row: the assembled video follows the FILENAME number (Frame = filename
     # number - 1), not `num` -- they differ on flight 08 (num jumps 220 -> 261).
     vid_to_idx = {int(r["filename"].rsplit("_", 1)[1].split(".")[0]) - 1: i for i, r in enumerate(rows)}
+    S["vid_num"] = [r["filename"].rsplit("_", 1)[1].split(".")[0] for r in rows]
 
     agl_path = CSV_DIR / f"agl_uavvisloc_{flight}.csv"
     if agl_path.exists():
@@ -307,7 +308,8 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
 
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
-               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="loclin"):
+               half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="loclin",
+               per_still_out=None):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
@@ -331,6 +333,13 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
         est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r, fill=fill)
     cov = ~np.isnan(est[:, 0])
     cons_err = np.linalg.norm(est[cov] - G[cov], axis=1)
+    if per_still_out:   # opt-in (2026-11-26): per-still fused error, for segment-level scoring; changes nothing else
+        vid = [int(fn) - 1 for fn in S["vid_num"]]
+        with open(per_still_out, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["Frame", "Fused_Err_M"])
+            for i in range(len(G)):
+                w.writerow([vid[i], f"{np.linalg.norm(est[i] - G[i]):.3f}" if cov[i] else ""])
 
     res = {"flight": flight, "estimator": estimator, "n": len(G), "alt_source": S["alt_source"],
            "vo_ok_frac": float(ok.mean()),
@@ -379,6 +388,8 @@ def main():
     ap.add_argument("--recalibrate", action="store_true")
     ap.add_argument("--oracle", action="store_true", help="also report the oracle anchor-selection floor")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--per-still-out", default=None,
+                    help="write Frame (0-based video index),Fused_Err_M per still; one flight only")
     ap.add_argument("--min-inliers", type=int, default=0, help="drop anchors with fewer inliers")
     ap.add_argument("--r-agree", type=float, default=R_AGREE, help="consensus agreement radius (m)")
     ap.add_argument("--no-plot", action="store_true")
@@ -397,6 +408,8 @@ def main():
                          "since 2026-11-24, see local_consensus) or the plain mean of the winning cluster (previous default)")
     a = ap.parse_args()
     flights = a.flights.split(",")
+    if a.per_still_out and len(flights) != 1:
+        sys.exit("--per-still-out takes exactly one flight")
     if a.oracle and set(flights) & set(HELD_OUT):
         sys.exit("--oracle uses ground truth to pick anchors; not allowed on held-out flights")
 
@@ -410,7 +423,8 @@ def main():
 
     results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
                           min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r,
-                          prior=a.prior, fill=a.fill, half_m=a.half_m, offset_model=a.offset_model)
+                          prior=a.prior, fill=a.fill, half_m=a.half_m, offset_model=a.offset_model,
+                          per_still_out=a.per_still_out)
                for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):

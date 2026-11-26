@@ -325,6 +325,19 @@ inline std::vector<DatasetSampleConfig> getDatasetSamples() {
         "aerialvl_large",
         "Videos/dataset_uavvisloc_av4.avi",
     });
+    // Heading-tracked variants (2026-11-26, INVESTIGATION_LOG "AerialVL Heading Sign Sweep" + pre-registration):
+    // same images and video cache as the base sequence, but Phi1 from the camera-only VO turns
+    // (scripts/prepare_aerialvl.py heading-track) instead of the constant 90. Separate sample names so no baseline
+    // output is overwritten; "uavvisloc_av2" as a filter does not match them.
+    samples.push_back({
+        "uavvisloc_hdg_av2", "uavvisloc",
+        "Datasets/UAV_VisLoc_dataset/av2/drone", "av2", 498,
+        "Datasets/UAV_VisLoc_dataset/hdg_av2/hdg_av2.csv",
+        "Images/map_clean_aerialvl_large.png",
+        "Datasets/aerialvl_coordinates_range.csv",
+        "aerialvl_large",
+        "Videos/dataset_uavvisloc_av2.avi",
+    });
 
     return samples;
 }

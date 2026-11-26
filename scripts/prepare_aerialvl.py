@@ -26,6 +26,13 @@ Sequences: av1 = long_trajtr/2023-03-16-18-04-01 (639 frames, partly dusk), av2 
     python3 -I scripts/prepare_aerialvl.py layout
     python3 -I scripts/stills_visual_odometry.py --flights av2,av1        (frozen, unchanged)
     python3 -I scripts/prepare_aerialvl.py calibrate-gsd
+    python3 -I scripts/prepare_aerialvl.py heading-track --seqs av2,av1      (2026-11-26, opt-in variant samples)
+
+heading-track (INVESTIGATION_LOG "AerialVL Heading Sign Sweep" + its pre-registration): writes a SEPARATE sample
+hdg_<seq> (same drone images; baseline <seq> untouched) whose Phi1 = Phi2 = 90 - sum of the frozen stills-VO Rot_Deg
+over pairs with Ok = 1 and |Rot_Deg| >= --turn-thresh (2.5 deg). Camera-only, no GPS. Sign -1 measured by the oracle
+angle sweep (scripts/aerialvl_heading_sign_diag.py); the threshold keeps abrupt turns and drops the slow per-pair VO
+bias (av1: cumVO -13 deg while the true heading error stayed ~0).
 """
 import argparse
 import csv
@@ -64,15 +71,17 @@ def frames_of(seq):
     return rows
 
 
-def write_seq_csv(seq, rows, height):
-    path = OUT / seq / f"{seq}.csv"
+def write_seq_csv(seq, rows, height, headings=None, out_name=None):
+    out_name = out_name or seq
+    path = OUT / out_name / f"{out_name}.csv"
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(HEADER)
         for i, (ms, lon, lat, _) in enumerate(rows, start=1):
             date = datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+            hdg = 90 if headings is None else headings[i - 1]
             w.writerow([i, f"{seq}_{i:04d}.JPG", date, f"{lat:.10f}", f"{lon:.10f}", f"{height:.3f}",
-                        0, 0, 90, 90])
+                        0, 0, hdg, hdg])
     return path
 
 
@@ -181,6 +190,42 @@ def cmd_calibrate_gsd(args):
                   f"{g * width:.0f} x {g * 1536:.0f} m; wrote CSV height + agl_uavvisloc_{seq}.csv")
 
 
+def vo_turn_headings(seq, n, thresh):
+    """Phi1 per still (0-based list): 90 - cumulative Rot_Deg over Ok pairs with |Rot_Deg| >= thresh."""
+    rot = np.zeros(n)
+    for r in csv.DictReader(open(CSV_DIR / f"stills_vo_uavvisloc_{seq}.csv", newline="")):
+        if r["From_Num"].startswith("#") or r["Ok"] != "1" or int(r["To_Num"]) != int(r["From_Num"]) + 1:
+            continue
+        rk, to = float(r["Rot_Deg"]), int(r["To_Num"]) - 1
+        if abs(rk) >= thresh and 0 < to < n:
+            rot[to] = rk
+    hdg = (90.0 - np.cumsum(rot)) % 360.0
+    return [90 if h == 90.0 else f"{h:.4f}" for h in hdg], rot
+
+
+def cmd_heading_track(args):
+    import shutil
+    for seq in args.seqs.split(","):
+        rows = frames_of(seq)
+        height = float(next(csv.DictReader(open(OUT / seq / f"{seq}.csv", newline="")))["height"])
+        hdg, rot = vo_turn_headings(seq, len(rows), args.turn_thresh)
+        name = f"hdg_{seq}"
+        (OUT / name).mkdir(parents=True, exist_ok=True)
+        drone = OUT / name / "drone"
+        if not drone.is_symlink():
+            os.symlink(os.path.relpath(OUT / seq / "drone", OUT / name), drone)
+        path = write_seq_csv(seq, rows, height, headings=hdg, out_name=name)
+        link = VISLOC_ROOT / name
+        if not link.is_symlink():
+            os.symlink(os.path.relpath(OUT / name, VISLOC_ROOT), link)
+        for pre in ("agl_uavvisloc_", "stills_vo_uavvisloc_"):
+            shutil.copyfile(CSV_DIR / f"{pre}{seq}.csv", CSV_DIR / f"{pre}{name}.csv")
+        changed = [i for i, h in enumerate(hdg) if h != 90]
+        print(f"{name}: {path.relative_to(REPO)}; {int((rot != 0).sum())} turn steps (|rot| >= {args.turn_thresh}), "
+              f"sum {rot.sum():+.2f} deg; heading changed on {len(changed)} stills"
+              + (f" (first frame {changed[0]}, final heading {hdg[-1]})" if changed else " (identical to baseline)"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -190,8 +235,11 @@ def main():
     c.add_argument("--min-inliers", type=int, default=30)
     c.add_argument("--min-step-m", type=float, default=20.0)
     c.add_argument("--baseline", type=int, default=20, help="VO pairs per GSD sample (see pairs())")
+    h = sub.add_parser("heading-track")
+    h.add_argument("--seqs", default="av2,av1")
+    h.add_argument("--turn-thresh", type=float, default=2.5)
     args = ap.parse_args()
-    {"layout": cmd_layout, "calibrate-gsd": cmd_calibrate_gsd}[args.cmd](args)
+    {"layout": cmd_layout, "calibrate-gsd": cmd_calibrate_gsd, "heading-track": cmd_heading_track}[args.cmd](args)
 
 
 if __name__ == "__main__":
