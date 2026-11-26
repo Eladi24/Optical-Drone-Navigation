@@ -17,6 +17,16 @@
 #include <sstream>
 #include <sys/stat.h>
 
+namespace {
+// Width of the live window's progress sidebar for a NavigationView image. Its text scales with its width and
+// needs ~1.6x that width in height, so it is capped by the view's height too (a very wide view otherwise gave a
+// sidebar whose text ran off the bottom).
+int navSidebarWidth(const cv::Mat& view)
+{
+    return std::max(360, std::min(static_cast<int>(view.cols * 0.16), static_cast<int>(view.rows / 1.6)));
+}
+}  // namespace
+
 ReferenceGridGeometry footprintMatchedCropGeometry(int frame_width_px, int frame_height_px, double frame_gsd,
                                                    int frozen_crop_meters, int frozen_spacing_meters,
                                                    double min_ratio)
@@ -353,7 +363,8 @@ void processVideoNavigation(
     // =========================================================================
     // OUTPUT SETUP
     // =========================================================================
-    cv::namedWindow("Video Navigation", cv::WINDOW_NORMAL);
+    // WINDOW_NORMAL: user-resizable (drag the edges / maximise); KEEPRATIO letterboxes instead of stretching.
+    cv::namedWindow("Video Navigation", cv::WINDOW_NORMAL | cv::WINDOW_KEEPRATIO);
     cv::namedWindow("Video Frame",      cv::WINDOW_NORMAL);
     const NavigationView nav_view(
         reference_map,
@@ -364,7 +375,7 @@ void processVideoNavigation(
         ground_truth_path, mpp);
     {   // open the window at the view's own aspect ratio (sidebar + panels), at most 1800 x 900
         const cv::Mat probe = nav_view.render({}, {}, {}, initial_position);
-        const double cols = probe.cols + std::max(360, static_cast<int>(probe.cols * 0.16));
+        const double cols = probe.cols + navSidebarWidth(probe);
         const double k = std::min(1800.0 / cols, 900.0 / probe.rows);
         cv::resizeWindow("Video Navigation", static_cast<int>(cols * k), static_cast<int>(probe.rows * k));
     }
@@ -381,7 +392,7 @@ void processVideoNavigation(
     cv::Size video_size(1200, 800);
     {
         const cv::Mat probe = nav_view.render({}, {}, {}, initial_position);
-        const int cols = probe.cols + std::max(360, static_cast<int>(probe.cols * 0.16));
+        const int cols = probe.cols + navSidebarWidth(probe);
         video_size = cv::Size(1800, std::max(2, static_cast<int>(std::lround(1800.0 * probe.rows / cols)) & ~1));
     }
     if (std::getenv("DRONENAV_SAVE_VIDEO") != nullptr) {
@@ -799,7 +810,7 @@ void processVideoNavigation(
         // long flight. This panel's text is sized relative to its own width, so
         // it stays legible no matter how far the window is scaled.
         {
-            int side_w = std::max(360, static_cast<int>(display_map.cols * 0.16));
+            int side_w = navSidebarWidth(display_map);
             cv::Mat sidebar(display_map.rows, side_w, display_map.type(),
                             cv::Scalar(38, 38, 38));
             double s = side_w / 340.0;              // base font scale

@@ -48,6 +48,29 @@ NavigationView::NavigationView(const cv::Mat& map, Project to_map_px, const std:
     scale_ = static_cast<double>(panel_height) / crop_.height;
     cv::resize(dim, base_, cv::Size(std::max(1, static_cast<int>(std::lround(crop_.width * scale_))), panel_height),
                0, 0, cv::INTER_AREA);
+    layout_ = chooseLayout(panelCount(), base_.size());
+    ui_ = std::max(1.0, (layout_.width * base_.cols + (layout_.width - 1) * kGap) / 1800.0);
+}
+
+cv::Size NavigationView::chooseLayout(int k, cv::Size panel)
+{
+    const std::vector<cv::Size> candidates = k == 3 ? std::vector<cv::Size>{{3, 1}, {2, 2}, {1, 3}}
+                                                    : std::vector<cv::Size>{{1, 1}};
+    cv::Size best = candidates.front();
+    double best_scale = -1.0;
+    for (const cv::Size& g : candidates) {   // in order of increasing rows: a tie keeps the flatter grid
+        const double w = g.width * panel.width + (g.width - 1) * kGap;
+        const double h = kLegend + g.height * (kTitle + panel.height) + (g.height - 1) * kGap;
+        const double scale = std::min(kFitW / w, kFitH / h);
+        if (scale > best_scale + 1e-9) { best_scale = scale; best = g; }
+    }
+    return best;
+}
+
+cv::Point NavigationView::panelOrigin(int i) const
+{
+    const int c = i % layout_.width, r = i / layout_.width;
+    return {c * (base_.cols + kGap), legendHeight() + titleHeight() + r * (titleHeight() + base_.rows + kGap)};
 }
 
 cv::Point2d NavigationView::toPanel(double lat, double lng) const
@@ -124,27 +147,34 @@ cv::Mat NavigationView::render(const std::vector<LatLng>& gt_drawn, const std::v
     }
 
     const int pw = base_.cols, ph = base_.rows, k = static_cast<int>(panels.size());
-    cv::Mat out(kHeader + ph, k * pw + (k - 1) * kGap, base_.type(), kChrome);
+    const int gc = layout_.width, gr = layout_.height;
+    const double u = ui_;
+    cv::Mat out(legendHeight() + gr * (titleHeight() + ph) + (gr - 1) * kGap, gc * pw + (gc - 1) * kGap, base_.type(),
+                kChrome);
     for (int i = 0; i < k; ++i) {
-        const int x = i * (pw + kGap);
-        panels[i].copyTo(out(cv::Rect(x, kHeader, pw, ph)));
-        // Title, shrunk to fit its panel (tall, narrow flights give narrow panels).
-        double fs = 0.75;
+        const cv::Point o = panelOrigin(i);
+        panels[i].copyTo(out(cv::Rect(o.x, o.y, pw, ph)));
+        // Title in the band above the panel, shrunk to fit it (tall, narrow flights give narrow panels).
+        double fs = 0.75 * u;
+        const int th = std::max(2, static_cast<int>(std::lround(2 * u)));
         int base = 0;
-        while (fs > 0.35 && cv::getTextSize(titles[i], cv::FONT_HERSHEY_SIMPLEX, fs, 2, &base).width > pw - 16)
+        while (fs > 0.35 && cv::getTextSize(titles[i], cv::FONT_HERSHEY_SIMPLEX, fs, th, &base).width > pw - 16)
             fs -= 0.05;
-        cv::putText(out, titles[i], {x + 8, 28}, cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(235, 235, 235), 2,
-                    cv::LINE_AA);
+        cv::putText(out, titles[i], {o.x + static_cast<int>(8 * u), o.y - static_cast<int>(10 * u)},
+                    cv::FONT_HERSHEY_SIMPLEX, fs, cv::Scalar(235, 235, 235), th, cv::LINE_AA);
     }
-    // Second header row, full width: one legend for all panels.
-    int x = 10;
-    const int y = 58;
+    // Legend row, full width, once above the grid.
+    auto U = [&](double v) { return static_cast<int>(std::lround(v * u)); };
+    int x = U(10);
+    const int y = U(24);
+    const int lt = std::max(1, U(1));
     auto item = [&](const char* label, const cv::Scalar& col, bool dot) {
-        if (dot) cv::circle(out, {x + 10, y - 5}, 4, col, -1, cv::LINE_AA);
-        else     cv::line(out, {x, y - 5}, {x + 22, y - 5}, col, 3, cv::LINE_AA);
-        cv::putText(out, label, {x + 28, y}, cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(215, 215, 215), 1, cv::LINE_AA);
+        if (dot) cv::circle(out, {x + U(10), y - U(5)}, U(4), col, -1, cv::LINE_AA);
+        else     cv::line(out, {x, y - U(5)}, {x + U(22), y - U(5)}, col, U(3), cv::LINE_AA);
+        cv::putText(out, label, {x + U(28), y}, cv::FONT_HERSHEY_SIMPLEX, 0.5 * u, cv::Scalar(215, 215, 215), lt,
+                    cv::LINE_AA);
         int base = 0;
-        x += 40 + cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5, 1, &base).width;
+        x += U(40) + cv::getTextSize(label, cv::FONT_HERSHEY_SIMPLEX, 0.5 * u, lt, &base).width;
     };
     if (has_gt_) item("truth", kTruth, false);
     item("estimate", kEstimate, false);
