@@ -211,7 +211,7 @@ def dead_reckon(odo, start=(0.0, 0.0)):
 
 # ---------------------------------------------------------------- fusion
 def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_support=MIN_SUPPORT,
-                    path_s=None, half_m=None, offset_model="loclin"):
+                    path_s=None, half_m=None, offset_model="loclin", min_span_m=None):
     """Window = anchors within +-half STILLS of still i, or -- when half_m is given -- within +-half_m METRES of
     path distance along the dead-reckoned odometry track (path_s, cumulative, no GPS). The still-count window
     silently changes meaning with the capture rate: +-10 stills is +-800-950 m on UAV-VisLoc but +-34 m on AerialVL
@@ -239,6 +239,11 @@ def local_consensus(p, a_idx, ax, ay, half=HALF_WIN, r_agree=R_AGREE, min_suppor
         b = int(np.argmax(votes))
         if votes[b] >= min_support:
             members = c[d[b] <= r_agree]
+            # Opt-in span guard (2026-11-26, exploratory): a decoy crop hit repeatedly sits at ONE world position, so its
+            # offsets agree only while the platform moves < r_agree; correct anchors agree at any separation. A winning
+            # cluster spanning < min_span_m of odometry path is therefore not trusted (no consensus -> fill/bridge).
+            if min_span_m is not None and np.ptp(path_s[a_idx[members]]) < min_span_m:
+                continue
             if offset_model == "mean":
                 est[i] = p[i] + o[members].mean(axis=0)
             else:
@@ -309,7 +314,7 @@ def gate_and_fill(est, p, a_idx, ax, ay, n, gate_r, fill="forward"):
 
 def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0, r_agree=R_AGREE,
                half=HALF_WIN, gate_r=0.0, prior="speed", fill="forward", half_m=None, offset_model="loclin",
-               per_still_out=None):
+               per_still_out=None, min_span_m=None):
     from batch_trajectory_fusion import batch_fuse   # Step-1 LOESS baseline, unchanged
     S = load_flight(flight, estimator)
     G = np.column_stack([S["gx"], S["gy"]])
@@ -328,7 +333,7 @@ def run_flight(flight, estimator, calib, oracle=False, plot=True, min_inliers=0,
     p = dead_reckon(odo)                                   # arbitrary origin: no GT
     path_s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(odo, axis=1))])   # odometry path length, no GT
     est = local_consensus(p, a_idx, ax, ay, half=half, r_agree=r_agree, path_s=path_s, half_m=half_m,
-                          offset_model=offset_model)
+                          offset_model=offset_model, min_span_m=min_span_m)
     if gate_r > 0:
         est = gate_and_fill(est, p, a_idx, ax, ay, len(G), gate_r, fill=fill)
     cov = ~np.isnan(est[:, 0])
@@ -388,6 +393,8 @@ def main():
     ap.add_argument("--recalibrate", action="store_true")
     ap.add_argument("--oracle", action="store_true", help="also report the oracle anchor-selection floor")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--min-span-m", type=float, default=None,
+                    help="exploratory guard: ignore a winning consensus cluster spanning < this many m of odometry path")
     ap.add_argument("--per-still-out", default=None,
                     help="write Frame (0-based video index),Fused_Err_M per still; one flight only")
     ap.add_argument("--min-inliers", type=int, default=0, help="drop anchors with fewer inliers")
@@ -424,7 +431,7 @@ def main():
     results = [run_flight(fl, a.estimator, calib, oracle=a.oracle, plot=not a.no_plot,
                           min_inliers=a.min_inliers, r_agree=a.r_agree, half=a.half, gate_r=a.gate_r,
                           prior=a.prior, fill=a.fill, half_m=a.half_m, offset_model=a.offset_model,
-                          per_still_out=a.per_still_out)
+                          per_still_out=a.per_still_out, min_span_m=a.min_span_m)
                for fl in flights]
     print(f"\n=== combined over {flights} (mean of per-flight values)")
     for key in ("raw", "loess", "consensus") + (("oracle",) if a.oracle else ()):
